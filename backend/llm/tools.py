@@ -221,6 +221,127 @@ def lab_trend(component: str, **_: Any) -> dict:
     }
 
 
+_VITAL_SUMMARY_NAMES = (
+    "BLOOD PRESSURE", "PULSE", "TEMPERATURE", "RESPIRATIONS",
+    "PULSE OXIMETRY", "WEIGHT/SCALE", "HEIGHT", "BMI",
+    "R ENGLISH WEIGHT LBS",
+)
+
+
+def _numeric(value: str) -> float | None:
+    if value is None:
+        return None
+    m = re.match(r"\s*(-?\d+(?:\.\d+)?)", str(value))
+    return float(m.group(1)) if m else None
+
+
+def _split_bp(value: str) -> tuple[float | None, float | None]:
+    """Parse '118/72' into (systolic, diastolic). Returns (None, None) if unparseable."""
+    if not value:
+        return None, None
+    m = re.match(r"\s*(\d+)\s*/\s*(\d+)", str(value))
+    if not m:
+        return None, None
+    return float(m.group(1)), float(m.group(2))
+
+
+def vitals_trend(name: str, **_: Any) -> dict:
+    """Time series for a flowsheet vital (BP, pulse, temp, weight, etc.).
+
+    Values live in V_EHI_FLO_MEAS_VALUE joined to IP_FLWSHT_MEAS by
+    (FSD_ID, LINE). Accepts a substring; returns candidate names if
+    nothing matches.
+    """
+    select_cols = (
+        'SELECT m.RECORDED_TIME AS time, v.MEAS_VALUE_EXTERNAL AS raw_value, '
+        'v.UNITS AS unit, v.FLO_MEAS_ID_FLO_MEAS_NAME AS measurement '
+        'FROM "V_EHI_FLO_MEAS_VALUE" v '
+        'LEFT JOIN "IP_FLWSHT_MEAS" m USING (FSD_ID, LINE) '
+    )
+    rows = db.query(
+        select_cols
+        + 'WHERE v.FLO_MEAS_ID_FLO_MEAS_NAME=? '
+          'AND v.MEAS_VALUE_EXTERNAL IS NOT NULL AND v.MEAS_VALUE_EXTERNAL <> "" '
+          'ORDER BY m.RECORDED_TIME',
+        (name,),
+    )
+    matched: Any = name
+    if not rows:
+        rows = db.query(
+            select_cols
+            + 'WHERE v.FLO_MEAS_ID_FLO_MEAS_NAME LIKE ? '
+              'AND v.MEAS_VALUE_EXTERNAL IS NOT NULL AND v.MEAS_VALUE_EXTERNAL <> "" '
+              'ORDER BY m.RECORDED_TIME',
+            (f"%{name.upper()}%",),
+        )
+        if rows:
+            matched = sorted({r["measurement"] for r in rows if r.get("measurement")})
+    if not rows:
+        candidates = db.query(
+            'SELECT DISTINCT FLO_MEAS_ID_FLO_MEAS_NAME AS name '
+            'FROM "V_EHI_FLO_MEAS_VALUE" '
+            'WHERE FLO_MEAS_ID_FLO_MEAS_NAME LIKE ? '
+            'AND MEAS_VALUE_EXTERNAL IS NOT NULL AND MEAS_VALUE_EXTERNAL <> "" '
+            'ORDER BY name LIMIT 20',
+            (f"%{name.upper()}%",),
+        )
+        return {
+            "measurement": name,
+            "points": [],
+            "count": 0,
+            "candidates": [c["name"] for c in candidates],
+            "hint": "No exact or substring match. Try a candidate or browse "
+                    "V_EHI_FLO_MEAS_VALUE via run_sql.",
+        }
+    is_bp = any(
+        "BLOOD PRESSURE" in (r.get("measurement") or "") for r in rows
+    )
+    for r in rows:
+        raw = r.get("raw_value")
+        if is_bp:
+            sys_, dia = _split_bp(raw)
+            r["systolic"] = sys_
+            r["diastolic"] = dia
+        else:
+            r["value"] = _numeric(raw)
+    return {
+        "measurement": name,
+        "matched_measurements": matched,
+        "is_blood_pressure": is_bp,
+        "points": rows[:MAX_ROWS],
+        "count": len(rows),
+    }
+
+
+def _recent_vitals() -> list[dict]:
+    """Latest value for a short list of interesting vitals. Best-effort."""
+    placeholders = ",".join("?" * len(_VITAL_SUMMARY_NAMES))
+    try:
+        return db.query(
+            'SELECT v.FLO_MEAS_ID_FLO_MEAS_NAME AS name, '
+            'v.MEAS_VALUE_EXTERNAL AS value, v.UNITS AS unit, '
+            'm.RECORDED_TIME AS time '
+            'FROM "V_EHI_FLO_MEAS_VALUE" v '
+            'LEFT JOIN "IP_FLWSHT_MEAS" m USING (FSD_ID, LINE) '
+            'WHERE v.FLO_MEAS_ID_FLO_MEAS_NAME IN (' + placeholders + ') '
+            'AND v.MEAS_VALUE_EXTERNAL IS NOT NULL '
+            'AND v.MEAS_VALUE_EXTERNAL <> "" '
+            'AND m.RECORDED_TIME IS NOT NULL '
+            'AND (v.FLO_MEAS_ID_FLO_MEAS_NAME, m.RECORDED_TIME) IN ('
+            '  SELECT v2.FLO_MEAS_ID_FLO_MEAS_NAME, MAX(m2.RECORDED_TIME) '
+            '  FROM "V_EHI_FLO_MEAS_VALUE" v2 '
+            '  LEFT JOIN "IP_FLWSHT_MEAS" m2 USING (FSD_ID, LINE) '
+            '  WHERE v2.MEAS_VALUE_EXTERNAL IS NOT NULL '
+            '  AND v2.MEAS_VALUE_EXTERNAL <> "" '
+            '  GROUP BY v2.FLO_MEAS_ID_FLO_MEAS_NAME'
+            ') '
+            'ORDER BY m.RECORDED_TIME DESC',
+            tuple(_VITAL_SUMMARY_NAMES),
+        )
+    except Exception:
+        return []
+
+
 def get_patient_summary(**_: Any) -> dict:
     p = fhir.patient_summary()
     problems = fhir.conditions()
@@ -237,6 +358,7 @@ def get_patient_summary(**_: Any) -> dict:
         "allergies": allergies,
         "recent_medications": meds,
         "recent_encounters": recent_encounters,
+        "recent_vitals": _recent_vitals(),
     }
 
 
@@ -297,6 +419,18 @@ TOOLS: dict[str, tuple[ToolHandler, dict]] = {
         },
         "required": ["component"],
     }),
+    "vitals_trend": (vitals_trend, {
+        "type": "object",
+        "properties": {
+            "name": {
+                "type": "string",
+                "description": "Flowsheet measurement name or substring "
+                               "(e.g. 'BLOOD PRESSURE', 'PULSE', 'WEIGHT'). "
+                               "Case-insensitive substring match is supported.",
+            },
+        },
+        "required": ["name"],
+    }),
     "get_patient_summary": (get_patient_summary, {
         "type": "object", "properties": {}, "additionalProperties": False,
     }),
@@ -320,6 +454,11 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
     "lab_trend":
         "Return the time series for a named lab component (e.g. 'HbA1c'). "
         "Useful for trend questions.",
+    "vitals_trend":
+        "Return the time series for a flowsheet vital sign by name "
+        "(e.g. 'BLOOD PRESSURE', 'PULSE', 'TEMPERATURE', 'WEIGHT'). "
+        "For BLOOD PRESSURE each point includes split systolic/diastolic. "
+        "Use this instead of run_sql for any vitals question.",
     "get_patient_summary":
         "Return a precomputed summary: demographics, active problems, "
         "allergies, recent medications, recent encounters. Good default "

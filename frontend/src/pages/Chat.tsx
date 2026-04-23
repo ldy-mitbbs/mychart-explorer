@@ -8,9 +8,53 @@ interface Msg {
   tool_calls?: { id: string; function: { name: string; arguments: string } }[];
   tool_call_id?: string;
   name?: string;
+  tool_events?: ToolCallEvent[];
 }
 
 interface ToolCallEvent { id: string; name: string; arguments: any; result?: string; }
+
+function ToolCallView({ tc }: { tc: ToolCallEvent }) {
+  const { t } = useT();
+  const args = typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments);
+  return (
+    <div className="toolcall">
+      <span className="chip">🔧 {tc.name}({args})</span>
+      {tc.result !== undefined && (
+        <details>
+          <summary>{t('chat.toolResult', { n: tc.result.length })}</summary>
+          <pre>{tc.result.slice(0, 2000)}</pre>
+        </details>
+      )}
+    </div>
+  );
+}
+
+// Rebuild tool_events on assistant messages by pairing each `tool_calls[i]`
+// with the subsequent `role:"tool"` message that has a matching tool_call_id.
+function attachToolEvents(raw: Msg[]): Msg[] {
+  const results = new Map<string, string>();
+  for (const m of raw) {
+    if (m.role === 'tool' && m.tool_call_id) {
+      results.set(m.tool_call_id, m.content || '');
+    }
+  }
+  return raw
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .map((m) => {
+      if (m.role !== 'assistant' || !m.tool_calls?.length) return m;
+      const tool_events: ToolCallEvent[] = m.tool_calls.map((tc) => {
+        let args: any = tc.function.arguments;
+        try { args = JSON.parse(tc.function.arguments); } catch { /* keep raw */ }
+        return {
+          id: tc.id,
+          name: tc.function.name,
+          arguments: args,
+          result: results.get(tc.id),
+        };
+      });
+      return { ...m, tool_events };
+    });
+}
 
 function CopyCmd({ cmd, hint }: { cmd: string; hint?: string }) {
   const { t } = useT();
@@ -147,7 +191,7 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
       if (conversationId) {
         try {
           const c = await api<ConversationDetail>(`/api/conversations/${conversationId}`);
-          setMessages(c.messages.filter((m) => m.role === 'user' || m.role === 'assistant'));
+          setMessages(attachToolEvents(c.messages));
         } catch {
           setConversationId(null);
         }
@@ -274,7 +318,10 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
       setError((e as Error).message);
     }
 
-    setMessages((m) => [...m, { role: 'assistant', content: assistantText }]);
+    setMessages((m) => [
+      ...m,
+      { role: 'assistant', content: assistantText, tool_events: toolEvents },
+    ]);
     setStreaming(false);
     setStreamText('');
     setStreamTools([]);
@@ -564,20 +611,14 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
 
         {messages.map((m, i) => (
           <div key={i} className={`msg ${m.role}`}>
-            <div className="bubble">{renderContent(m.content)}</div>
+            {m.tool_events?.map((tc) => <ToolCallView key={tc.id} tc={tc} />)}
+            {m.content && <div className="bubble">{renderContent(m.content)}</div>}
           </div>
         ))}
 
         {streaming && (streamText || streamTools.length > 0) && (
           <div className="msg assistant">
-            {streamTools.map((tc) => (
-              <div key={tc.id} className="toolcall">
-                <span className="chip">🔧 {tc.name}({JSON.stringify(tc.arguments)})</span>
-                {tc.result !== undefined && (
-                  <details><summary>{t('chat.toolResult', { n: tc.result.length })}</summary><pre>{tc.result.slice(0, 2000)}</pre></details>
-                )}
-              </div>
-            ))}
+            {streamTools.map((tc) => <ToolCallView key={tc.id} tc={tc} />)}
             {streamText && <div className="bubble">{renderContent(streamText)}</div>}
           </div>
         )}
