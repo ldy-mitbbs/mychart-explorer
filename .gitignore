@@ -1,0 +1,50 @@
+# --- Secrets / data / PHI --------------------------------------------------
+# Never commit any ingested patient data or export files.
+data/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+schema.json
+settings.json
+
+# Raw Epic export folders (if anyone drops them next to the app).
+EHITables/
+EHITables Schema/
+FHIR/
+*.tsv
+*.ndjson
+*.htm
+*.html
+
+# API keys / env
+.env
+.env.*
+!.env.example
+
+# --- Python ---------------------------------------------------------------
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node / frontend ------------------------------------------------------
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.turbo/
+node_modules/
+dist/
+
+# --- Editor / OS ----------------------------------------------------------
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
