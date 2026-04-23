@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { Children, cloneElement, isValidElement, useEffect, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api } from '../api';
 import { useT } from '../i18n';
 
@@ -138,6 +141,60 @@ function renderContent(text: string): (JSX.Element | string)[] {
   }
   if (last < text.length) parts.push(text.slice(last));
   return parts;
+}
+
+// Walk a react-markdown subtree and replace string leaves with pill-linkified
+// fragments. Skip <code>/<pre> so fenced code blocks render verbatim.
+function linkifyChildren(children: ReactNode): ReactNode {
+  return Children.map(children, (child) => {
+    if (typeof child === 'string') return renderContent(child);
+    if (isValidElement(child)) {
+      const type = child.type as any;
+      if (type === 'code' || type === 'pre') return child;
+      const inner = (child.props as any)?.children;
+      if (inner === undefined) return child;
+      return cloneElement(child, child.props as any, linkifyChildren(inner));
+    }
+    return child;
+  });
+}
+
+function MarkdownBubble({ text }: { text: string }) {
+  return (
+    <div className="bubble markdown">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          a: ({ node: _node, ...props }) => (
+            <a {...props} target="_blank" rel="noopener noreferrer" />
+          ),
+          p: ({ node: _node, children }) => <p>{linkifyChildren(children)}</p>,
+          li: ({ node: _node, children, ...rest }) => (
+            <li {...rest}>{linkifyChildren(children)}</li>
+          ),
+          strong: ({ node: _node, children }) => <strong>{linkifyChildren(children)}</strong>,
+          em: ({ node: _node, children }) => <em>{linkifyChildren(children)}</em>,
+          h1: ({ node: _node, children }) => <h1>{linkifyChildren(children)}</h1>,
+          h2: ({ node: _node, children }) => <h2>{linkifyChildren(children)}</h2>,
+          h3: ({ node: _node, children }) => <h3>{linkifyChildren(children)}</h3>,
+          h4: ({ node: _node, children }) => <h4>{linkifyChildren(children)}</h4>,
+          h5: ({ node: _node, children }) => <h5>{linkifyChildren(children)}</h5>,
+          h6: ({ node: _node, children }) => <h6>{linkifyChildren(children)}</h6>,
+          td: ({ node: _node, children, ...rest }) => (
+            <td {...rest}>{linkifyChildren(children)}</td>
+          ),
+          th: ({ node: _node, children, ...rest }) => (
+            <th {...rest}>{linkifyChildren(children)}</th>
+          ),
+          blockquote: ({ node: _node, children }) => (
+            <blockquote>{linkifyChildren(children)}</blockquote>
+          ),
+        }}
+      >
+        {text}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
 export default function Chat({ onProviderChange }: { onProviderChange?: (p: string) => void }) {
@@ -612,14 +669,18 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
         {messages.map((m, i) => (
           <div key={i} className={`msg ${m.role}`}>
             {m.tool_events?.map((tc) => <ToolCallView key={tc.id} tc={tc} />)}
-            {m.content && <div className="bubble">{renderContent(m.content)}</div>}
+            {m.content && (
+              m.role === 'assistant'
+                ? <MarkdownBubble text={m.content} />
+                : <div className="bubble">{renderContent(m.content)}</div>
+            )}
           </div>
         ))}
 
         {streaming && (streamText || streamTools.length > 0) && (
           <div className="msg assistant">
             {streamTools.map((tc) => <ToolCallView key={tc.id} tc={tc} />)}
-            {streamText && <div className="bubble">{renderContent(streamText)}</div>}
+            {streamText && <MarkdownBubble text={streamText} />}
           </div>
         )}
 

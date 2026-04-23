@@ -141,6 +141,44 @@ mark { background: rgba(251, 191, 36, 0.4); color: inherit; padding: 0 1px; bord
 .chat .composer { display: flex; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
 .chat textarea { flex: 1; min-height: 44px; max-height: 150px; resize: vertical; font-family: inherit; }
 
+.chat .msg .bubble.markdown { white-space: normal; }
+.chat .bubble.markdown > :first-child { margin-top: 0; }
+.chat .bubble.markdown > :last-child { margin-bottom: 0; }
+.chat .bubble.markdown p { margin: 0 0 8px; }
+.chat .bubble.markdown ul, .chat .bubble.markdown ol { margin: 0 0 8px; padding-left: 22px; }
+.chat .bubble.markdown li { margin: 2px 0; }
+.chat .bubble.markdown li > p { margin: 0; }
+.chat .bubble.markdown h1, .chat .bubble.markdown h2, .chat .bubble.markdown h3,
+.chat .bubble.markdown h4, .chat .bubble.markdown h5, .chat .bubble.markdown h6 {
+  margin: 10px 0 6px; line-height: 1.25;
+}
+.chat .bubble.markdown h1 { font-size: 1.25em; }
+.chat .bubble.markdown h2 { font-size: 1.15em; }
+.chat .bubble.markdown h3 { font-size: 1.05em; }
+.chat .bubble.markdown h4, .chat .bubble.markdown h5, .chat .bubble.markdown h6 { font-size: 1em; }
+.chat .bubble.markdown code {
+  background: var(--panel-2); border: 1px solid var(--border);
+  padding: 1px 5px; border-radius: 4px; font-size: 0.9em;
+  font-family: 'SF Mono', ui-monospace, monospace;
+}
+.chat .bubble.markdown pre {
+  background: var(--panel-2); border: 1px solid var(--border);
+  padding: 10px 12px; border-radius: 6px; overflow-x: auto; margin: 0 0 8px;
+}
+.chat .bubble.markdown pre code { background: none; border: 0; padding: 0; font-size: 0.9em; }
+.chat .bubble.markdown a { color: #93c5fd; text-decoration: underline; }
+.chat .bubble.markdown blockquote {
+  margin: 0 0 8px; padding: 4px 10px; border-left: 3px solid var(--border);
+  color: var(--muted);
+}
+.chat .bubble.markdown table {
+  border-collapse: collapse; margin: 0 0 8px; font-size: 0.95em;
+}
+.chat .bubble.markdown th, .chat .bubble.markdown td {
+  border: 1px solid var(--border); padding: 4px 8px; text-align: left;
+}
+.chat .bubble.markdown hr { border: 0; border-top: 1px solid var(--border); margin: 10px 0; }
+
 pre { white-space: pre-wrap; word-wrap: break-word; }
 
 details summary { cursor: pointer; color: var(--muted); }
