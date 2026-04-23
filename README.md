@@ -117,8 +117,8 @@ the same numbers apply to system RAM, but expect slower tokens/sec.
 | 4–6 GB      | `qwen3:1.7b`, `qwen2.5:1.5b`, `granite4:1b`, `granite4:3b`            |
 | 8 GB        | `qwen3:4b`, `qwen2.5:3b`, `phi4-mini:3.8b`, `granite3.3:2b`           |
 | 12–16 GB    | `qwen3:8b` *(sweet spot)*, `qwen2.5:7b`, `qwen3.5:9b`, `granite3.3:8b`|
-| 24–32 GB    | `qwen3:14b`, `phi4:14b`, `qwen3.5:27b` (tight), `mistral-small:24b`   |
-| 48–64 GB    | `qwen3:30b` (MoE, fast), `gpt-oss:20b`, `qwen3:32b`, `qwen3.5:35b`    |
+| 24–32 GB    | `qwen3:14b`, `phi4:14b`, `qwen3.5:27b` (tight), `mistral-small:24b`, `qwen3.6:27b` † |
+| 48–64 GB    | `qwen3:30b` (MoE, fast), `gpt-oss:20b`, `qwen3:32b`, `qwen3.5:35b`, `qwen3.6:35b` †  |
 | 96 GB+      | `qwen3:235b` (MoE), `gpt-oss:120b`, `qwen3.5:122b`                    |
 
 Notes:
@@ -136,6 +136,11 @@ Notes:
   expose tool calling; use **Gemma 4** if you want a Google model.
 - If a model behaves oddly with tools, drop one size tier or switch to a
   `qwen3` tag.
+
+† **qwen3.6** is brand new (released April 2026) and only ships in 27B/35B.
+It's a `thinking` model with strong agentic coding scores, but tool-call
+templates for fresh releases can be rough for the first week or two — if you
+see malformed tool calls, fall back to `qwen3:32b` or `qwen3.5:27b`.
 
 ### Cloud (opt-in)
 
