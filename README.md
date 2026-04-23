@@ -2,23 +2,23 @@
 
 > English version: [README.en.md](README.en.md)
 
-这是一个**本地运行、注重隐私**的 Web 应用，适合用来浏览你从 Epic MyChart 导出的电子健康信息（EHI），并借助大语言模型（LLM）查询和理解自己的健康数据。默认的 LLM 后端是本地部署的 [Ollama](https://ollama.com) 模型，因此除非你主动启用云端服务商，否则你的病历数据不会离开本机。
+这是一个**本地运行、注重隐私**的 Web 应用，适合用来浏览你从 Epic MyChart 导出的电子健康信息（EHI），并借助大语言模型（LLM）查询和理解自己的健康数据。默认的 LLM backend 是本地部署的 [Ollama](https://ollama.com) 模型，因此除非你主动启用 cloud provider，否则你的病历数据不会离开本机。
 
 > ⚠️ **本项目不是 medical device。** 它只是一个个人数据探索工具，请勿用于临床决策。
 
-## 功能特性
+## Features
 
-- **无需命令行即可完成配置**：在应用内的 **Setup（设置）** 页面中选择你的导出目录，然后点击 *Start ingest（开始导入）*，即可实时查看导入进度。
-- **精选 dashboard**：提供概览、问题列表、用药、过敏、化验（含趋势图和参考范围）、生命体征、免疫接种、既往史、就诊记录完整详情、支持 FTS5 全文检索的临床笔记、MyChart 消息（RTF 转纯文本），以及所有扁平化后的 FHIR 资源。
-- **Tables browser**：可查看 Epic 导出中的全部表（约 3700 张）。已导入的表通过 SQLite 访问，其余表则按需从 TSV 流式读取；每一列的说明来自 Epic 数据字典，并以 hover tooltip 的形式展示。
-- **只读 SQL 控制台**：仅允许执行 SELECT，自动附加 LIMIT，并使用 `sqlglot` 做语法校验。
-- **AI 聊天（支持工具调用）**：模型可以调用
+- **无需命令行即可完成配置**：在应用内的 **Setup page** 中选择你的导出目录，然后点击 *Start ingest*，即可实时查看 ingest progress。
+- **精选 dashboard**：提供 summary、problems、medications、allergies、labs（含 trend chart 和 reference range）、vitals、immunizations、history、encounters 完整详情、支持 FTS5 full-text search 的 clinical notes、MyChart messages（RTF 转纯文本），以及所有扁平化后的 FHIR resources。
+- **Tables browser**：可查看 Epic 导出中的全部表（约 3700 张）。已 ingest 的表通过 SQLite 访问，其余表则按需从 TSV 流式读取；每一列的说明来自 Epic data dictionary，并以 hover tooltip 的形式展示。
+- **read-only SQL console**：仅允许执行 SELECT，自动附加 LIMIT，并使用 `sqlglot` 做语法校验。
+- **AI chat（支持 tool calling）**：模型可以调用
   `get_patient_summary`、`list_tables`、`describe_table`、`run_sql`、
-  `search_notes`、`get_note`、`get_message` 和 `lab_trend`。回答会附带来源引用，例如
+  `search_notes`、`get_note`、`get_message` 和 `lab_trend`。回答会附带 source citation，例如
   `[note:123]`、`[msg:456]`、`[table:PROBLEMS code=...]`。
-- **可插拔 LLM**：支持 Ollama（默认，本地）、OpenAI 和 Anthropic。启用云端服务商时，界面上会显示红色的 *"PHI sent to …"（个人健康信息已发送至…）* 提示横幅。
+- **Pluggable LLM**：支持 Ollama（默认，本地）、OpenAI 和 Anthropic。启用 cloud provider 时，界面上会显示红色的 *"PHI sent to …"（个人健康信息已发送至…）* warning banner。
 
-## 截图
+## Screenshots
 
 ![AI 回答一个问题，并引用笔记和化验趋势作为来源](docs/screenshots/chat1.png)
 
@@ -28,16 +28,16 @@
 
 ![糖化血红蛋白（HEMOGLOBIN A1C）的化验趋势图](docs/screenshots/labs.png)
 
-![Setup 页面展示导入进度状态](docs/screenshots/setup.png)
+![Setup page 展示 ingest progress](docs/screenshots/setup.png)
 
 ## Architecture
 
 ```
 mychart-explorer/
-  ingest/       解析 schema HTM + 导入 TSV + 导入 FHIR NDJSON -> SQLite
-                重组笔记 + MyChart 消息 + 建立 FTS5 索引
-  backend/      FastAPI（仅监听 localhost）+ SQL 防护 + LLM 路由 + 工具
-                提供由 UI 驱动的导入管理路由
+  ingest/       解析 schema HTM + ingest TSV + ingest FHIR NDJSON -> SQLite
+                重组笔记 + MyChart messages + 建立 FTS5 index
+  backend/      FastAPI（仅监听 localhost）+ SQL guard + LLM router + tools
+                提供由 UI 驱动的 ingest admin routes
   frontend/     React + Vite + TypeScript + recharts
   data/         mychart.db, schema.json, settings.json（自动生成，且已加入 gitignore）
 ```
@@ -46,10 +46,10 @@ mychart-explorer/
 
 - **Python** 3.11+
 - **Node.js** 18+
-- **你的 Epic MyChart 导出数据**：可通过患者门户申请。解压到一个方便的位置后，目录中应包含 `EHITables/`（TSV 文件）、`EHITables Schema/`（HTML 数据字典）和 `FHIR/`（NDJSON 文件）。
+- **你的 Epic MyChart 导出数据**：可通过 patient portal 申请。解压到一个方便的位置后，目录中应包含 `EHITables/`（TSV 文件）、`EHITables Schema/`（HTML 数据字典）和 `FHIR/`（NDJSON 文件）。
 - **可选：[Ollama](https://ollama.com)**，用于本地 LLM 聊天。
 
-## 快速开始
+## Quick start
 
 ```sh
 git clone https://github.com/ldy-mitbbs/mychart-explorer.git
@@ -70,7 +70,7 @@ npm run dev
 # 浏览器打开 http://localhost:5173
 ```
 
-首次启动时，应用会自动跳转到 **Setup（设置）** 页面。将 Epic 导出目录的绝对路径粘贴进去，依次点击 *Validate（校验）*、*Save（保存）* 和 *Start ingest（开始导入）*，随后就可以在界面中实时看到 ingest progress。
+首次启动时，应用会自动跳转到 **Setup page**。将 Epic 导出目录的绝对路径粘贴进去，依次点击 *Validate*、*Save* 和 *Start ingest*，随后就可以在界面中实时看到 ingest progress。
 
 ### CLI alternative
 
@@ -126,7 +126,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 uvicorn backend.main:app --host 127.0.0.1 --port 8765
 ```
 
-然后在 chat settings panel 中选择对应的服务商。界面会显示横幅，提示当前正在使用云端服务。**每轮对话都会将你的 PHI（受保护健康信息）发送给该服务商**，因此只有在你确认能够接受对方的数据政策后，才建议启用。
+然后在 chat settings panel 中选择对应的 provider。界面会显示 warning banner，提示当前正在使用云端服务。**每轮对话都会将你的 PHI（受保护健康信息）发送给该 provider**，因此只有在你确认能够接受对方的数据政策后，才建议启用。
 
 ## Privacy & security
 
@@ -144,9 +144,9 @@ uvicorn backend.main:app --host 127.0.0.1 --port 8765
 |---|---|---|
 | `MYCHART_SOURCE` | — | 覆盖源目录（否则使用 Setup 页面的设置） |
 | `MYCHART_DB` | `data/mychart.db` | 输出的 SQLite 路径 |
-| `MYCHART_SCHEMA_JSON` | `data/schema.json` | 解析后的数据字典路径 |
-| `OPENAI_API_KEY` | — | 启用 OpenAI 服务商 |
-| `ANTHROPIC_API_KEY` | — | 启用 Anthropic 服务商 |
+| `MYCHART_SCHEMA_JSON` | `data/schema.json` | 解析后的 data dictionary 路径 |
+| `OPENAI_API_KEY` | — | 启用 OpenAI provider |
+| `ANTHROPIC_API_KEY` | — | 启用 Anthropic provider |
 
 ## Ingest flags
 
@@ -158,15 +158,15 @@ python -m ingest --source ... --db ... [--skip-schema] [--skip-tsv] [--skip-fhir
 
 ## Adding more tables
 
-默认会将约 40 张临床表加载到 SQLite 中，以便快速访问。导出数据中的其他表仍然可以通过 **Tables browser** 按需访问（从 TSV 流式读取）。如果你想把某张表也纳入 SQLite：
+默认会将约 40 张 clinical tables 加载到 SQLite 中，以便快速访问。导出数据中的其他表仍然可以通过 **Tables browser** 按需访问（从 TSV 流式读取）。如果你想把某张表也纳入 SQLite：
 
 1. 在 `ingest/tables.py` 中加入它的名字（以及可选的索引列）。
-2. 重新运行导入（通过 Setup 页面中的 *Re-ingest*，或在命令行中使用
+2. 重新运行 ingest（通过 Setup page 中的 *Re-ingest*，或在命令行中使用
    `--skip-schema --skip-fhir`）。
 
 ## Disclaimer
 
-本项目与 Epic Systems、任何医疗机构以及任何电子病历厂商均无关联。请自行承担使用风险。作者并非临床医生，本项目也不构成医学建议。
+本项目与 Epic Systems、任何医疗机构以及任何 electronic health record 厂商均无关联。请自行承担使用风险。作者并非临床医生，本项目也不构成医学建议。
 
 ## License
 
