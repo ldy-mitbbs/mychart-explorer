@@ -18,6 +18,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from .. import chat_store
 from ..config import load_settings, save_settings
 from .providers import make_provider
 from .tools import dispatch, tool_specs
@@ -58,6 +59,8 @@ Rules:
 class ChatRequest(BaseModel):
     messages: list[dict]
     settings_override: dict | None = None
+    conversation_id: str | None = None
+    persist: bool = True
 
 
 class SettingsPatch(BaseModel):
@@ -89,6 +92,28 @@ def update_settings(patch: SettingsPatch) -> dict:
     return get_settings()
 
 
+@router.get("/ollama/models")
+async def list_ollama_models(url: str | None = None) -> dict:
+    """List models installed in the configured (or given) Ollama server.
+
+    Proxies ``GET {url}/api/tags`` so the UI can render a dropdown instead of
+    a free-text field. Returns ``{"ok": bool, "models": [name, ...], "error": str?}``.
+    """
+    import httpx
+
+    base = (url or load_settings().get("ollama_url") or "http://localhost:11434").rstrip("/")
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"{base}/api/tags")
+            r.raise_for_status()
+            data = r.json()
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "models": [], "error": str(e), "url": base}
+    models = [m.get("name") for m in data.get("models", []) if m.get("name")]
+    models.sort()
+    return {"ok": True, "models": models, "url": base}
+
+
 async def _run_chat(req: ChatRequest) -> AsyncIterator[bytes]:
     settings = load_settings()
     if req.settings_override:
@@ -104,6 +129,23 @@ async def _run_chat(req: ChatRequest) -> AsyncIterator[bytes]:
     messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
     messages.extend(req.messages)
     tools = tool_specs()
+
+    # Track which messages to persist. The last message in req.messages is
+    # the new user turn; everything the model/tools emit below is also new.
+    persist = bool(req.persist and req.conversation_id)
+    new_messages: list[dict] = []
+    if persist and req.messages:
+        last_user = req.messages[-1]
+        if last_user.get("role") == "user":
+            new_messages.append({
+                "role": "user",
+                "content": last_user.get("content", ""),
+            })
+            # Auto-title the conversation from the first user message.
+            chat_store.set_title_if_empty(
+                req.conversation_id or "",
+                (last_user.get("content") or "").strip(),
+            )
 
     try:
         max_turns = int(settings.get("max_tool_turns") or DEFAULT_MAX_TURNS)
@@ -127,6 +169,8 @@ async def _run_chat(req: ChatRequest) -> AsyncIterator[bytes]:
                     break
         except Exception as e:
             yield _sse({"type": "error", "message": str(e)})
+            if persist and new_messages:
+                chat_store.append_messages(req.conversation_id, new_messages)
             return
 
         # Record assistant message in history.
@@ -146,9 +190,12 @@ async def _run_chat(req: ChatRequest) -> AsyncIterator[bytes]:
                 for tc in pending_tool_calls
             ]
         messages.append(assistant_msg)
+        new_messages.append(assistant_msg)
 
         if not pending_tool_calls:
             yield _sse({"type": "done"})
+            if persist:
+                chat_store.append_messages(req.conversation_id, new_messages)
             return
 
         # Execute each tool and append results.
@@ -160,16 +207,20 @@ async def _run_chat(req: ChatRequest) -> AsyncIterator[bytes]:
                 "name": tc["name"],
                 "result": result,
             })
-            messages.append({
+            tool_msg = {
                 "role": "tool",
                 "tool_call_id": tc["id"],
                 "name": tc["name"],
                 "content": result,
-            })
+            }
+            messages.append(tool_msg)
+            new_messages.append(tool_msg)
 
     yield _sse({"type": "error",
                 "message": f"Exceeded {max_turns} tool turns."})
     yield _sse({"type": "done"})
+    if persist and new_messages:
+        chat_store.append_messages(req.conversation_id, new_messages)
 
 
 def _sse(obj: dict) -> bytes:

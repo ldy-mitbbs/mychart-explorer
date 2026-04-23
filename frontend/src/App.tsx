@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Patient } from './api';
 import { api } from './api';
+import { ageFromDob } from './age';
 import Summary from './pages/Summary';
 import Problems from './pages/Problems';
 import Allergies from './pages/Allergies';
@@ -94,7 +95,7 @@ export default function App() {
           {patient && (
             <span className="meta" style={{ marginLeft: 16 }}>
               <b>{patient.name}</b>
-              {patient.birthDate && ` · DOB ${patient.birthDate}`}
+              {ageFromDob(patient.birthDate) !== null && ` · Age ${ageFromDob(patient.birthDate)}`}
               {patient.gender && ` · ${patient.gender}`}
               {patient.mrn && ` · MRN ${patient.mrn}`}
             </span>

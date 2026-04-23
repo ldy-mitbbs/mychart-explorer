@@ -11,6 +11,7 @@ from .llm.chat import router as chat_router
 from .routes.admin import router as admin_router
 from .routes.browser import router as browser_router
 from .routes.clinical import router as clinical_router
+from .routes.conversations import router as conversations_router
 
 app = FastAPI(title="MyChart Explorer", version="0.1.0")
 
@@ -41,4 +42,5 @@ def health() -> dict:
 app.include_router(clinical_router, prefix="/api")
 app.include_router(browser_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")
+app.include_router(conversations_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")

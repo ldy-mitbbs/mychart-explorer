@@ -22,6 +22,28 @@ interface Settings {
   has_anthropic_key?: boolean;
 }
 
+interface Conversation {
+  id: string;
+  title: string;
+  created_at: number;
+  updated_at: number;
+  message_count: number;
+}
+
+interface ConversationDetail extends Conversation {
+  messages: Msg[];
+}
+
+function conversationLabel(c: Conversation): string {
+  const t = (c.title || '').trim();
+  if (t) return t.length > 60 ? t.slice(0, 57) + '…' : t;
+  return 'Untitled chat';
+}
+
+function formatTime(ts: number): string {
+  try { return new Date(ts * 1000).toLocaleString(); } catch { return ''; }
+}
+
 function renderContent(text: string): (JSX.Element | string)[] {
   // Linkify [note:ID] / [msg:ID] / [table:NAME ...] as pills.
   const parts: (JSX.Element | string)[] = [];
@@ -49,10 +71,105 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings>({});
   const [showSettings, setShowSettings] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationId, setConversationId] = useState<string | null>(
+    () => localStorage.getItem('mychart.conversationId')
+  );
+  const [ollamaModels, setOllamaModels] = useState<string[] | null>(null);
+  const [ollamaModelsError, setOllamaModelsError] = useState<string | null>(null);
+  const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false);
   const msgsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { api<Settings>('/api/settings').then(setSettings); }, []);
   useEffect(() => { msgsRef.current?.scrollTo(0, msgsRef.current.scrollHeight); }, [messages, streamText, streamTools]);
+
+  useEffect(() => {
+    if (conversationId) {
+      localStorage.setItem('mychart.conversationId', conversationId);
+    } else {
+      localStorage.removeItem('mychart.conversationId');
+    }
+  }, [conversationId]);
+
+  async function refreshConversations() {
+    try {
+      const list = await api<Conversation[]>('/api/conversations');
+      setConversations(list);
+    } catch { /* ignore */ }
+  }
+
+  // Initial load: restore last conversation if it still exists.
+  useEffect(() => {
+    (async () => {
+      await refreshConversations();
+      if (conversationId) {
+        try {
+          const c = await api<ConversationDetail>(`/api/conversations/${conversationId}`);
+          setMessages(c.messages.filter((m) => m.role === 'user' || m.role === 'assistant'));
+        } catch {
+          setConversationId(null);
+        }
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function ensureConversation(): Promise<string> {
+    if (conversationId) return conversationId;
+    const c = await api<Conversation>('/api/conversations', {
+      method: 'POST', body: JSON.stringify({}),
+    });
+    setConversationId(c.id);
+    setConversations((cs) => [c, ...cs]);
+    return c.id;
+  }
+
+  async function loadConversation(cid: string) {
+    if (streaming) return;
+    try {
+      const c = await api<ConversationDetail>(`/api/conversations/${cid}`);
+      setMessages(c.messages.filter((m) => m.role === 'user' || m.role === 'assistant'));
+      setConversationId(cid);
+      setShowHistory(false);
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  function newChat() {
+    if (streaming) return;
+    setMessages([]);
+    setConversationId(null);
+    setError(null);
+  }
+
+  async function deleteConversation(cid: string) {
+    if (streaming) return;
+    if (!confirm('Delete this conversation?')) return;
+    try {
+      await api(`/api/conversations/${cid}`, { method: 'DELETE' });
+      setConversations((cs) => cs.filter((c) => c.id !== cid));
+      if (cid === conversationId) newChat();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  async function renameConversation(cid: string, current: string) {
+    if (streaming) return;
+    const title = prompt('Rename conversation:', current);
+    if (title === null) return;
+    try {
+      const c = await api<Conversation>(`/api/conversations/${cid}`, {
+        method: 'PATCH', body: JSON.stringify({ title }),
+      });
+      setConversations((cs) => cs.map((x) => (x.id === cid ? { ...x, title: c.title } : x)));
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
 
   async function send() {
     if (!input.trim() || streaming) return;
@@ -66,12 +183,17 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
 
     let assistantText = '';
     const toolEvents: ToolCallEvent[] = [];
+    let cid: string | null = null;
 
     try {
+      cid = await ensureConversation();
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: nextMsgs.map(({ role, content }) => ({ role, content })) }),
+        body: JSON.stringify({
+          messages: nextMsgs.map(({ role, content }) => ({ role, content })),
+          conversation_id: cid,
+        }),
       });
       if (!res.ok || !res.body) throw new Error(`${res.status} ${res.statusText}`);
 
@@ -115,6 +237,7 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
     setStreaming(false);
     setStreamText('');
     setStreamTools([]);
+    if (cid) refreshConversations();
   }
 
   async function saveSettings(patch: Partial<Settings>) {
@@ -122,6 +245,37 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
     setSettings(r);
     if (patch.llm_provider && onProviderChange) onProviderChange(patch.llm_provider);
   }
+
+  async function refreshOllamaModels(url?: string) {
+    setOllamaModelsLoading(true);
+    setOllamaModelsError(null);
+    try {
+      const qs = url ? `?url=${encodeURIComponent(url)}` : '';
+      const r = await api<{ ok: boolean; models: string[]; error?: string }>(
+        `/api/ollama/models${qs}`,
+      );
+      if (r.ok) {
+        setOllamaModels(r.models);
+      } else {
+        setOllamaModels([]);
+        setOllamaModelsError(r.error || 'Could not reach Ollama');
+      }
+    } catch (e) {
+      setOllamaModels([]);
+      setOllamaModelsError((e as Error).message);
+    } finally {
+      setOllamaModelsLoading(false);
+    }
+  }
+
+  // Load the Ollama model list when the settings panel is first opened for
+  // the ollama provider, or when the URL changes.
+  useEffect(() => {
+    if (showSettings && settings.llm_provider === 'ollama') {
+      refreshOllamaModels(settings.ollama_url);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showSettings, settings.llm_provider, settings.ollama_url]);
 
   return (
     <div className="chat">
@@ -136,10 +290,58 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
           </div>
         </div>
         <div className="row">
-          <button onClick={() => setMessages([])} disabled={streaming || messages.length === 0}>Clear</button>
+          <button onClick={newChat} disabled={streaming}>New chat</button>
+          <button onClick={() => setShowHistory((s) => !s)} disabled={streaming}>
+            History{conversations.length ? ` (${conversations.length})` : ''}
+          </button>
           <button onClick={() => setShowSettings((s) => !s)}>Settings</button>
         </div>
       </div>
+
+      {showHistory && (
+        <div className="card">
+          <div className="row" style={{ justifyContent: 'space-between', marginBottom: 6 }}>
+            <b>Conversation history</b>
+            <button onClick={() => setShowHistory(false)}>Close</button>
+          </div>
+          {conversations.length === 0 && (
+            <div className="small muted">No saved conversations yet.</div>
+          )}
+          {conversations.map((c) => (
+            <div
+              key={c.id}
+              className="row"
+              style={{
+                justifyContent: 'space-between',
+                padding: '6px 0',
+                borderTop: '1px solid var(--border, #2a2a2a)',
+                background: c.id === conversationId ? 'rgba(255,255,255,0.04)' : undefined,
+              }}
+            >
+              <div
+                style={{ flex: 1, cursor: 'pointer', overflow: 'hidden' }}
+                onClick={() => loadConversation(c.id)}
+                title="Load this conversation"
+              >
+                <div style={{ fontWeight: c.id === conversationId ? 600 : 400 }}>
+                  {conversationLabel(c)}
+                </div>
+                <div className="small muted">
+                  {c.message_count} msg · {formatTime(c.updated_at)}
+                </div>
+              </div>
+              <div className="row" style={{ gap: 4 }}>
+                <button onClick={() => renameConversation(c.id, c.title)} disabled={streaming}>
+                  Rename
+                </button>
+                <button onClick={() => deleteConversation(c.id)} disabled={streaming}>
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {showSettings && (
         <div className="card">
@@ -158,12 +360,75 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
             {settings.llm_provider === 'ollama' && (
               <>
                 <label>Model
-                  <input
-                    value={settings.ollama_model || ''}
-                    onChange={(e) => setSettings({ ...settings, ollama_model: e.target.value })}
-                    onBlur={() => saveSettings({ ollama_model: settings.ollama_model })}
-                    style={{ marginLeft: 6, width: 220 }}
-                  />
+                  {ollamaModels && ollamaModels.length > 0 ? (
+                    <select
+                      value={
+                        settings.ollama_model && ollamaModels.includes(settings.ollama_model)
+                          ? settings.ollama_model
+                          : '__custom__'
+                      }
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === '__custom__') {
+                          // Switch to a blank custom entry; text input appears below.
+                          setSettings({ ...settings, ollama_model: '' });
+                        } else {
+                          saveSettings({ ollama_model: v });
+                        }
+                      }}
+                      style={{ marginLeft: 6, minWidth: 220 }}
+                    >
+                      {settings.ollama_model &&
+                        !ollamaModels.includes(settings.ollama_model) && (
+                          <option value={settings.ollama_model}>
+                            {settings.ollama_model} (not installed)
+                          </option>
+                        )}
+                      {ollamaModels.map((m) => (
+                        <option key={m} value={m}>{m}</option>
+                      ))}
+                      <option value="__custom__">Custom…</option>
+                    </select>
+                  ) : (
+                    <input
+                      value={settings.ollama_model || ''}
+                      onChange={(e) => setSettings({ ...settings, ollama_model: e.target.value })}
+                      onBlur={() => saveSettings({ ollama_model: settings.ollama_model })}
+                      style={{ marginLeft: 6, width: 220 }}
+                      placeholder="e.g. llama3.1:8b"
+                    />
+                  )}
+                  <button
+                    className="btn"
+                    onClick={() => refreshOllamaModels(settings.ollama_url)}
+                    disabled={ollamaModelsLoading}
+                    style={{ marginLeft: 6 }}
+                    title="Refresh list from Ollama"
+                  >
+                    {ollamaModelsLoading ? '…' : '↻'}
+                  </button>
+                  {ollamaModels &&
+                    ollamaModels.length > 0 &&
+                    settings.ollama_model !== undefined &&
+                    !ollamaModels.includes(settings.ollama_model || '') && (
+                      <input
+                        value={settings.ollama_model || ''}
+                        onChange={(e) => setSettings({ ...settings, ollama_model: e.target.value })}
+                        onBlur={() => saveSettings({ ollama_model: settings.ollama_model })}
+                        placeholder="custom model tag"
+                        style={{ marginLeft: 6, width: 220 }}
+                      />
+                    )}
+                  {ollamaModelsError && (
+                    <span className="small warn-text" style={{ marginLeft: 8 }}>
+                      {ollamaModelsError} — is `ollama serve` running?
+                    </span>
+                  )}
+                  {ollamaModels && ollamaModels.length === 0 && !ollamaModelsError && (
+                    <span className="small muted" style={{ marginLeft: 8 }}>
+                      No models installed. Try <code>ollama pull llama3.1:8b</code>.
+                    </span>
+                  )}
                 </label>
                 <label>URL
                   <input

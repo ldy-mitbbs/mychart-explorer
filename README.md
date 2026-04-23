@@ -51,7 +51,7 @@ mychart-explorer/
 
 ## Prerequisites
 
-- **Python** 3.9+
+- **Python** 3.11+
 - **Node.js** 18+
 - **Your Epic MyChart export** — request it from your patient portal. Unzip
   it somewhere convenient; the folder should contain `EHITables/` (TSVs),

@@ -247,6 +247,29 @@ def lab_series(component: str) -> list[dict]:
     return fhir.observation_series(component)
 
 
+@router.get("/labs/recent")
+def lab_recent(limit: int = 12) -> list[dict]:
+    """Most recent individual lab results across all components."""
+    try:
+        rows = db.query(
+            'SELECT COMPONENT_ID_NAME AS name, RESULT_DATE AS time, '
+            'ORD_VALUE AS value, REFERENCE_UNIT AS unit, '
+            'REFERENCE_LOW AS ref_low, REFERENCE_HIGH AS ref_high, '
+            'RESULT_FLAG_C_NAME AS flag, RESULT_IN_RANGE_YN AS in_range '
+            'FROM "ORDER_RESULTS" '
+            'WHERE COMPONENT_ID_NAME IS NOT NULL AND RESULT_DATE IS NOT NULL '
+            'AND ORD_VALUE IS NOT NULL AND ORD_VALUE <> "" '
+            'ORDER BY RESULT_DATE DESC LIMIT ?',
+            (limit,),
+        )
+        if rows:
+            return rows
+    except Exception:
+        pass
+    return []
+
+
+
 # --- Vitals (flowsheet) -----------------------------------------------------
 
 @router.get("/vitals/measurements")
@@ -279,6 +302,34 @@ def vital_series(name: str) -> list[dict]:
         )
     except Exception:
         return []
+
+
+@router.get("/vitals/recent")
+def vital_recent() -> list[dict]:
+    """Latest value for each flowsheet measurement that has a value."""
+    try:
+        return db.query(
+            'SELECT v.FLO_MEAS_ID_FLO_MEAS_NAME AS name, '
+            'v.MEAS_VALUE_EXTERNAL AS value, v.UNITS AS unit, '
+            'm.RECORDED_TIME AS time '
+            'FROM "V_EHI_FLO_MEAS_VALUE" v '
+            'LEFT JOIN "IP_FLWSHT_MEAS" m USING (FSD_ID, LINE) '
+            'WHERE v.MEAS_VALUE_EXTERNAL IS NOT NULL '
+            'AND v.MEAS_VALUE_EXTERNAL <> "" '
+            'AND m.RECORDED_TIME IS NOT NULL '
+            'AND (v.FLO_MEAS_ID_FLO_MEAS_NAME, m.RECORDED_TIME) IN ('
+            '  SELECT v2.FLO_MEAS_ID_FLO_MEAS_NAME, MAX(m2.RECORDED_TIME) '
+            '  FROM "V_EHI_FLO_MEAS_VALUE" v2 '
+            '  LEFT JOIN "IP_FLWSHT_MEAS" m2 USING (FSD_ID, LINE) '
+            '  WHERE v2.MEAS_VALUE_EXTERNAL IS NOT NULL '
+            '  AND v2.MEAS_VALUE_EXTERNAL <> "" '
+            '  GROUP BY v2.FLO_MEAS_ID_FLO_MEAS_NAME'
+            ') '
+            'ORDER BY m.RECORDED_TIME DESC'
+        )
+    except Exception:
+        return []
+
 
 
 # --- Notes ------------------------------------------------------------------
