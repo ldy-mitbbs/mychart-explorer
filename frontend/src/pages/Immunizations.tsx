@@ -1,15 +1,17 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { useT } from '../i18n';
 
 export default function Immunizations() {
+  const { t } = useT();
   const [rows, setRows] = useState<any[]>([]);
   useEffect(() => { api<any[]>('/api/immunizations').then(setRows); }, []);
   return (
     <>
-      <h1>Immunizations <span className="muted small">({rows.length})</span></h1>
+      <h1>{t('imms.title')} <span className="muted small">{t('common.count', { n: rows.length })}</span></h1>
       <div className="card">
         <table className="dtable">
-          <thead><tr><th>Vaccine</th><th>Date</th><th>Lot</th><th>Route</th><th>Site</th><th>Status</th></tr></thead>
+          <thead><tr><th>{t('imms.col.vaccine')}</th><th>{t('imms.col.date')}</th><th>{t('imms.col.lot')}</th><th>{t('imms.col.route')}</th><th>{t('imms.col.site')}</th><th>{t('imms.col.status')}</th></tr></thead>
           <tbody>
             {rows.map((v, i) => (
               <tr key={i}>

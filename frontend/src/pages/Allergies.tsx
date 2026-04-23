@@ -1,18 +1,20 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { useT } from '../i18n';
 
 export default function Allergies() {
+  const { t } = useT();
   const [rows, setRows] = useState<any[]>([]);
   useEffect(() => { api<any[]>('/api/allergies').then(setRows); }, []);
   return (
     <>
-      <h1>Allergies <span className="muted small">({rows.length})</span></h1>
+      <h1>{t('allergies.title')} <span className="muted small">{t('common.count', { n: rows.length })}</span></h1>
       <div className="card">
         {rows.length === 0 ? (
-          <div className="muted">No documented allergies.</div>
+          <div className="muted">{t('allergies.empty')}</div>
         ) : (
           <table className="dtable">
-            <thead><tr><th>Allergen</th><th>Reactions</th><th>Severity</th><th>Noted</th><th>Status</th></tr></thead>
+            <thead><tr><th>{t('allergies.col.allergen')}</th><th>{t('allergies.col.reactions')}</th><th>{t('allergies.col.severity')}</th><th>{t('allergies.col.noted')}</th><th>{t('allergies.col.status')}</th></tr></thead>
             <tbody>
               {rows.map((a, i) => (
                 <tr key={a.ALLERGY_ID || i}>

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
+import { useT } from '../i18n';
 
 interface Msg {
   role: 'user' | 'assistant' | 'tool';
@@ -12,6 +13,7 @@ interface Msg {
 interface ToolCallEvent { id: string; name: string; arguments: any; result?: string; }
 
 function CopyCmd({ cmd, hint }: { cmd: string; hint?: string }) {
+  const { t } = useT();
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
@@ -35,7 +37,7 @@ function CopyCmd({ cmd, hint }: { cmd: string; hint?: string }) {
         borderRadius: 6,
         fontFamily: 'ui-monospace, monospace',
       }}
-      title={hint || 'Run this in Terminal (macOS) or PowerShell (Windows)'}
+      title={hint || t('chat.copyHint')}
     >
       <span>{cmd}</span>
       <button
@@ -43,7 +45,7 @@ function CopyCmd({ cmd, hint }: { cmd: string; hint?: string }) {
         onClick={copy}
         style={{ padding: '2px 8px', fontSize: 11 }}
       >
-        {copied ? 'copied' : 'copy'}
+        {copied ? t('chat.copied') : t('chat.copy')}
       </button>
     </div>
   );
@@ -72,12 +74,6 @@ interface ConversationDetail extends Conversation {
   messages: Msg[];
 }
 
-function conversationLabel(c: Conversation): string {
-  const t = (c.title || '').trim();
-  if (t) return t.length > 60 ? t.slice(0, 57) + '…' : t;
-  return 'Untitled chat';
-}
-
 function formatTime(ts: number): string {
   try { return new Date(ts * 1000).toLocaleString(); } catch { return ''; }
 }
@@ -101,6 +97,7 @@ function renderContent(text: string): (JSX.Element | string)[] {
 }
 
 export default function Chat({ onProviderChange }: { onProviderChange?: (p: string) => void }) {
+  const { t } = useT();
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
@@ -118,6 +115,12 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
   const [ollamaModelsError, setOllamaModelsError] = useState<string | null>(null);
   const [ollamaModelsLoading, setOllamaModelsLoading] = useState(false);
   const msgsRef = useRef<HTMLDivElement>(null);
+
+  function conversationLabel(c: Conversation): string {
+    const title = (c.title || '').trim();
+    if (title) return title.length > 60 ? title.slice(0, 57) + '…' : title;
+    return t('chat.untitled');
+  }
 
   useEffect(() => { api<Settings>('/api/settings').then(setSettings); }, []);
   useEffect(() => { msgsRef.current?.scrollTo(0, msgsRef.current.scrollHeight); }, [messages, streamText, streamTools]);
@@ -185,7 +188,7 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
 
   async function deleteConversation(cid: string) {
     if (streaming) return;
-    if (!confirm('Delete this conversation?')) return;
+    if (!confirm(t('chat.confirmDelete'))) return;
     try {
       await api(`/api/conversations/${cid}`, { method: 'DELETE' });
       setConversations((cs) => cs.filter((c) => c.id !== cid));
@@ -197,7 +200,7 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
 
   async function renameConversation(cid: string, current: string) {
     if (streaming) return;
-    const title = prompt('Rename conversation:', current);
+    const title = prompt(t('chat.renamePrompt'), current);
     if (title === null) return;
     try {
       const c = await api<Conversation>(`/api/conversations/${cid}`, {
@@ -319,31 +322,31 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
     <div className="chat">
       <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
         <div>
-          <h1 style={{ margin: 0 }}>Ask AI</h1>
+          <h1 style={{ margin: 0 }}>{t('chat.title')}</h1>
           <div className="small muted">
-            Provider: <b>{settings.llm_provider}</b>
+            {t('chat.providerPrefix')} <b>{settings.llm_provider}</b>
             {settings.llm_provider === 'ollama' && settings.ollama_model && ` · ${settings.ollama_model}`}
             {settings.llm_provider === 'openai' && settings.openai_model && ` · ${settings.openai_model}`}
             {settings.llm_provider === 'anthropic' && settings.anthropic_model && ` · ${settings.anthropic_model}`}
           </div>
         </div>
         <div className="row">
-          <button onClick={newChat} disabled={streaming}>New chat</button>
+          <button onClick={newChat} disabled={streaming}>{t('chat.newChat')}</button>
           <button onClick={() => setShowHistory((s) => !s)} disabled={streaming}>
-            History{conversations.length ? ` (${conversations.length})` : ''}
+            {t('chat.history')}{conversations.length ? ` (${conversations.length})` : ''}
           </button>
-          <button onClick={() => setShowSettings((s) => !s)}>Settings</button>
+          <button onClick={() => setShowSettings((s) => !s)}>{t('chat.settings')}</button>
         </div>
       </div>
 
       {showHistory && (
         <div className="card">
           <div className="row" style={{ justifyContent: 'space-between', marginBottom: 6 }}>
-            <b>Conversation history</b>
-            <button onClick={() => setShowHistory(false)}>Close</button>
+            <b>{t('chat.conversationHistory')}</b>
+            <button onClick={() => setShowHistory(false)}>{t('common.close')}</button>
           </div>
           {conversations.length === 0 && (
-            <div className="small muted">No saved conversations yet.</div>
+            <div className="small muted">{t('chat.noConversations')}</div>
           )}
           {conversations.map((c) => (
             <div
@@ -359,21 +362,21 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
               <div
                 style={{ flex: 1, cursor: 'pointer', overflow: 'hidden' }}
                 onClick={() => loadConversation(c.id)}
-                title="Load this conversation"
+                title={t('chat.loadTitle')}
               >
                 <div style={{ fontWeight: c.id === conversationId ? 600 : 400 }}>
                   {conversationLabel(c)}
                 </div>
                 <div className="small muted">
-                  {c.message_count} msg · {formatTime(c.updated_at)}
+                  {t('chat.msgCount', { n: c.message_count })} · {formatTime(c.updated_at)}
                 </div>
               </div>
               <div className="row" style={{ gap: 4 }}>
                 <button onClick={() => renameConversation(c.id, c.title)} disabled={streaming}>
-                  Rename
+                  {t('chat.rename')}
                 </button>
                 <button onClick={() => deleteConversation(c.id)} disabled={streaming}>
-                  Delete
+                  {t('chat.delete')}
                 </button>
               </div>
             </div>
@@ -384,20 +387,20 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
       {showSettings && (
         <div className="card">
           <div className="row" style={{ gap: 12, flexWrap: 'wrap' }}>
-            <label>Provider
+            <label>{t('chat.provider')}
               <select
                 value={settings.llm_provider || 'ollama'}
                 onChange={(e) => saveSettings({ llm_provider: e.target.value })}
                 style={{ marginLeft: 6 }}
               >
-                <option value="ollama">ollama (local)</option>
-                <option value="openai">openai (cloud)</option>
-                <option value="anthropic">anthropic (cloud)</option>
+                <option value="ollama">{t('chat.provider.ollama')}</option>
+                <option value="openai">{t('chat.provider.openai')}</option>
+                <option value="anthropic">{t('chat.provider.anthropic')}</option>
               </select>
             </label>
             {settings.llm_provider === 'ollama' && (
               <>
-                <label>Model
+                <label>{t('chat.model')}
                   {ollamaModels && ollamaModels.length > 0 ? (
                     <select
                       value={
@@ -419,13 +422,13 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
                       {settings.ollama_model &&
                         !ollamaModels.includes(settings.ollama_model) && (
                           <option value={settings.ollama_model}>
-                            {settings.ollama_model} (not installed)
+                            {t('chat.notInstalled', { model: settings.ollama_model })}
                           </option>
                         )}
                       {ollamaModels.map((m) => (
                         <option key={m} value={m}>{m}</option>
                       ))}
-                      <option value="__custom__">Custom…</option>
+                      <option value="__custom__">{t('chat.customModel')}</option>
                     </select>
                   ) : (
                     <input
@@ -441,7 +444,7 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
                     onClick={() => refreshOllamaModels(settings.ollama_url)}
                     disabled={ollamaModelsLoading}
                     style={{ marginLeft: 6 }}
-                    title="Refresh list from Ollama"
+                    title={t('chat.refreshOllama')}
                   >
                     {ollamaModelsLoading ? '…' : '↻'}
                   </button>
@@ -460,15 +463,15 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
                   {ollamaModelsError && (
                     <>
                       <span className="small warn-text" style={{ marginLeft: 8 }}>
-                        {ollamaModelsError} — is Ollama running?
+                        {t('chat.ollamaUnreachable', { err: ollamaModelsError })}
                       </span>
-                      <CopyCmd cmd="ollama serve" hint="Start the Ollama server" />
+                      <CopyCmd cmd="ollama serve" hint={t('chat.ollamaServeHint')} />
                     </>
                   )}
                   {ollamaModels && ollamaModels.length === 0 && !ollamaModelsError && (
                     <>
                       <span className="small muted" style={{ marginLeft: 8 }}>
-                        No models installed. Run this to pull one:
+                        {t('chat.noModelsHelp')}
                       </span>
                       <CopyCmd cmd="ollama pull llama3.1:8b" />
                     </>
@@ -479,16 +482,16 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
                     !ollamaModels.includes(settings.ollama_model) && (
                       <>
                         <span className="small warn-text" style={{ marginLeft: 8 }}>
-                          Model <code>{settings.ollama_model}</code> is not installed.
+                          {t('chat.modelNotInstalled', { model: settings.ollama_model })}
                         </span>
                         <CopyCmd
                           cmd={`ollama pull ${settings.ollama_model}`}
-                          hint="Run in Terminal (macOS) or PowerShell (Windows), then click ↻ to refresh"
+                          hint={t('chat.pullHint')}
                         />
                       </>
                     )}
                 </label>
-                <label>URL
+                <label>{t('chat.url')}
                   <input
                     value={settings.ollama_url || ''}
                     onChange={(e) => setSettings({ ...settings, ollama_url: e.target.value })}
@@ -499,7 +502,7 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
               </>
             )}
             {settings.llm_provider === 'openai' && (
-              <label>Model
+              <label>{t('chat.model')}
                 <input
                   value={settings.openai_model || ''}
                   onChange={(e) => setSettings({ ...settings, openai_model: e.target.value })}
@@ -507,12 +510,14 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
                   style={{ marginLeft: 6, width: 220 }}
                 />
                 <span className="small muted" style={{ marginLeft: 8 }}>
-                  API key: {settings.has_openai_key ? 'OPENAI_API_KEY set' : 'missing — export OPENAI_API_KEY before starting backend'}
+                  {t('chat.apiKeyLabel')} {settings.has_openai_key
+                    ? t('chat.apiKey.set', { envvar: 'OPENAI_API_KEY' })
+                    : t('chat.apiKey.missing', { envvar: 'OPENAI_API_KEY' })}
                 </span>
               </label>
             )}
             {settings.llm_provider === 'anthropic' && (
-              <label>Model
+              <label>{t('chat.model')}
                 <input
                   value={settings.anthropic_model || ''}
                   onChange={(e) => setSettings({ ...settings, anthropic_model: e.target.value })}
@@ -520,11 +525,13 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
                   style={{ marginLeft: 6, width: 220 }}
                 />
                 <span className="small muted" style={{ marginLeft: 8 }}>
-                  API key: {settings.has_anthropic_key ? 'ANTHROPIC_API_KEY set' : 'missing — export ANTHROPIC_API_KEY before starting backend'}
+                  {t('chat.apiKeyLabel')} {settings.has_anthropic_key
+                    ? t('chat.apiKey.set', { envvar: 'ANTHROPIC_API_KEY' })
+                    : t('chat.apiKey.missing', { envvar: 'ANTHROPIC_API_KEY' })}
                 </span>
               </label>
             )}
-            <label>Max tool turns
+            <label>{t('chat.maxTurns')}
               <input
                 type="number"
                 min={1}
@@ -535,7 +542,7 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
                 style={{ marginLeft: 6, width: 80 }}
               />
               <span className="small muted" style={{ marginLeft: 8 }}>
-                Cap on tool-call iterations per question (1–100).
+                {t('chat.maxTurns.help')}
               </span>
             </label>
           </div>
@@ -545,12 +552,12 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
       <div className="messages" ref={msgsRef}>
         {messages.length === 0 && !streaming && (
           <div className="card muted">
-            <div><b>Try asking:</b></div>
+            <div><b>{t('chat.tryAsking')}</b></div>
             <ul>
-              <li>What are my active problems and medications?</li>
-              <li>Show my HbA1c trend over time.</li>
-              <li>Summarize my most recent primary-care visit.</li>
-              <li>Do I have any abnormal labs in the last year?</li>
+              <li>{t('chat.example.1')}</li>
+              <li>{t('chat.example.2')}</li>
+              <li>{t('chat.example.3')}</li>
+              <li>{t('chat.example.4')}</li>
             </ul>
           </div>
         )}
@@ -563,11 +570,11 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
 
         {streaming && (streamText || streamTools.length > 0) && (
           <div className="msg assistant">
-            {streamTools.map((t) => (
-              <div key={t.id} className="toolcall">
-                <span className="chip">🔧 {t.name}({JSON.stringify(t.arguments)})</span>
-                {t.result !== undefined && (
-                  <details><summary>result ({t.result.length} chars)</summary><pre>{t.result.slice(0, 2000)}</pre></details>
+            {streamTools.map((tc) => (
+              <div key={tc.id} className="toolcall">
+                <span className="chip">🔧 {tc.name}({JSON.stringify(tc.arguments)})</span>
+                {tc.result !== undefined && (
+                  <details><summary>{t('chat.toolResult', { n: tc.result.length })}</summary><pre>{tc.result.slice(0, 2000)}</pre></details>
                 )}
               </div>
             ))}
@@ -582,19 +589,19 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
           return (
             <div className="msg assistant">
               <div className="bubble" style={{ color: 'var(--danger)' }}>
-                <div>Error: {error}</div>
+                <div>{t('chat.error', { msg: error })}</div>
                 {missing && settings.llm_provider === 'ollama' && (
                   <div style={{ marginTop: 6 }}>
-                    <span className="small">Fix: pull the model, then retry.</span>
+                    <span className="small">{t('chat.fix.pull')}</span>
                     <CopyCmd
                       cmd={`ollama pull ${missing}`}
-                      hint="Run in Terminal (macOS) or PowerShell (Windows)"
+                      hint={t('chat.copyHint')}
                     />
                   </div>
                 )}
                 {unreachable && settings.llm_provider === 'ollama' && (
                   <div style={{ marginTop: 6 }}>
-                    <span className="small">Fix: start the Ollama server.</span>
+                    <span className="small">{t('chat.fix.serve')}</span>
                     <CopyCmd cmd="ollama serve" />
                   </div>
                 )}
@@ -609,10 +616,10 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
-          placeholder="Ask about your health data… (Enter to send, Shift+Enter for newline)"
+          placeholder={t('chat.composer.placeholder')}
         />
         <button className="primary" onClick={send} disabled={streaming || !input.trim()}>
-          {streaming ? 'Streaming…' : 'Send'}
+          {streaming ? t('chat.streaming') : t('chat.send')}
         </button>
       </div>
     </div>

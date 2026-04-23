@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { useT } from '../i18n';
 
 export default function Notes() {
+  const { t } = useT();
   const [rows, setRows] = useState<any[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<any>(null);
@@ -21,9 +23,9 @@ export default function Notes() {
 
   return (
     <>
-      <h1>Clinical notes <span className="muted small">({rows.length})</span></h1>
+      <h1>{t('notes.title')} <span className="muted small">{t('common.count', { n: rows.length })}</span></h1>
       <input
-        placeholder="search notes (FTS5, e.g. cholesterol, back pain, knee)"
+        placeholder={t('notes.search.placeholder')}
         value={q}
         onChange={(e) => setQ(e.target.value)}
         style={{ width: 500, marginBottom: 12 }}
@@ -31,7 +33,7 @@ export default function Notes() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr', gap: 16 }}>
         <div className="card" style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
           <table className="dtable">
-            <thead><tr><th>Type</th><th>Date</th><th>Author</th></tr></thead>
+            <thead><tr><th>{t('notes.col.type')}</th><th>{t('notes.col.date')}</th><th>{t('notes.col.author')}</th></tr></thead>
             <tbody>
               {rows.map((n) => (
                 <tr
@@ -53,12 +55,12 @@ export default function Notes() {
           </table>
         </div>
         <div>
-          {!detail && <div className="card muted">Select a note to read its full text.</div>}
+          {!detail && <div className="card muted">{t('notes.selectPrompt')}</div>}
           {detail && (
             <div className="card">
               <div className="row" style={{ justifyContent: 'space-between' }}>
                 <div>
-                  <h2 style={{ margin: 0, border: 0 }}>{detail.note_type || detail.description || 'Note'}</h2>
+                  <h2 style={{ margin: 0, border: 0 }}>{detail.note_type || detail.description || t('notes.defaultTitle')}</h2>
                   <div className="small muted">
                     {detail.author && `${detail.author} · `}{(detail.created || '').slice(0, 16)}
                     {detail.pat_enc_csn && ` · CSN ${detail.pat_enc_csn}`}
@@ -68,7 +70,7 @@ export default function Notes() {
                 <button onClick={() => setSelected(null)}>×</button>
               </div>
               <div className="note-body" style={{ marginTop: 10 }}>
-                {detail.full_text || <span className="muted">(no body)</span>}
+                {detail.full_text || <span className="muted">{t('notes.noBody')}</span>}
               </div>
             </div>
           )}

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
 import { isOunces, toDisplay, prettyName } from '../vitals_format';
+import { useT } from '../i18n';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts';
@@ -9,6 +10,7 @@ interface M { name: string; n: number; unit: string | null; }
 interface P { time: string; value: string; unit: string; value_type: string; }
 
 export default function Vitals() {
+  const { t } = useT();
   const [meas, setMeas] = useState<M[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [series, setSeries] = useState<P[]>([]);
@@ -41,16 +43,16 @@ export default function Vitals() {
 
   return (
     <>
-      <h1>Vitals / Flowsheet</h1>
+      <h1>{t('vitals.title')}</h1>
       <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 16 }}>
         <div className="card" style={{ maxHeight: 'calc(100vh - 160px)', overflowY: 'auto' }}>
           <input
-            placeholder="filter…"
+            placeholder={t('vitals.filter.placeholder')}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             style={{ width: '100%', marginBottom: 8 }}
           />
-          <div className="small muted" style={{ marginBottom: 4 }}>{visible.length} measurements</div>
+          <div className="small muted" style={{ marginBottom: 4 }}>{t('vitals.measurements', { n: visible.length })}</div>
           {visible.map((c) => (
             <div key={c.name}
               onClick={() => setSelected(c.name)}
@@ -67,7 +69,7 @@ export default function Vitals() {
         </div>
 
         <div>
-          {!selected && <div className="card muted">Select a measurement.</div>}
+          {!selected && <div className="card muted">{t('vitals.selectPrompt')}</div>}
           {selected && (
             <>
               <div className="card">
@@ -85,12 +87,12 @@ export default function Vitals() {
                     </ResponsiveContainer>
                   </div>
                 ) : (
-                  <div className="muted small">(Non-numeric values — see table below.)</div>
+                  <div className="muted small">{t('vitals.nonNumeric')}</div>
                 )}
               </div>
               <div className="card">
                 <table className="dtable">
-                  <thead><tr><th>Time</th><th>Value</th><th>Unit</th><th>Type</th></tr></thead>
+                  <thead><tr><th>{t('vitals.col.time')}</th><th>{t('vitals.col.value')}</th><th>{t('vitals.col.unit')}</th><th>{t('vitals.col.type')}</th></tr></thead>
                   <tbody>
                     {series.map((p, i) => {
                       const d = toDisplay(p.value, p.unit);

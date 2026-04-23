@@ -29,6 +29,11 @@ unless you explicitly opt in to a cloud provider.
   sources like `[note:123]`, `[msg:456]`, `[table:PROBLEMS code=...]`.
 - **Pluggable LLM**: Ollama (default, local), OpenAI, or Anthropic. Cloud
   providers show a red *"PHI sent to …"* banner while active.
+- **Bilingual UI (English / 简体中文)**: toggle the language from the header.
+  The choice persists in localStorage and auto-detects `zh-*` browsers on
+  first visit — handy for sharing the app with family members who read
+  Chinese more comfortably than English. Ask questions in Chinese and the
+  local LLM will reply in Chinese.
 
 ## Screenshots
 

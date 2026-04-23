@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../api';
+import { useT } from '../i18n';
 
 interface SourceInfo {
   source: string;
@@ -39,6 +40,7 @@ function fmtBytes(n: number | undefined): string {
 }
 
 export default function Setup({ onDone }: { onDone?: () => void }) {
+  const { t } = useT();
   const [status, setStatus] = useState<Status | null>(null);
   const [path, setPath] = useState('');
   const [info, setInfo] = useState<SourceInfo | null>(null);
@@ -77,7 +79,7 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
       );
       setInfo(r);
     } catch (e: any) {
-      setError(e.message || 'validation failed');
+      setError(e.message || t('setup.err.validation'));
       setInfo(null);
     } finally {
       setBusy(false);
@@ -96,7 +98,7 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
         await validate(r.path);
       }
     } catch (e: any) {
-      setError(e.message || 'could not open folder picker');
+      setError(e.message || t('setup.err.pickFolder'));
     } finally {
       setBusy(false);
     }
@@ -114,7 +116,7 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
       setInfo(r.source_info);
       refresh();
     } catch (e: any) {
-      setError(e.message || 'save failed');
+      setError(e.message || t('setup.err.save'));
     } finally {
       setBusy(false);
     }
@@ -134,8 +136,8 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
         signal: ctrl.signal,
       });
       if (!res.ok || !res.body) {
-        const t = await res.text();
-        throw new Error(t || `HTTP ${res.status}`);
+        const txt = await res.text();
+        throw new Error(txt || `HTTP ${res.status}`);
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -157,7 +159,7 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
         }
       }
     } catch (e: any) {
-      if (e.name !== 'AbortError') setError(e.message || 'ingest failed');
+      if (e.name !== 'AbortError') setError(e.message || t('setup.err.ingest'));
     } finally {
       setRunning(false);
       abortRef.current = null;
@@ -170,42 +172,42 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
 
   return (
     <div style={{ maxWidth: 860 }}>
-      <h1>Setup</h1>
+      <h1>{t('setup.title')}</h1>
 
       <div className="card">
-        <h3>Current state</h3>
-        {!status && <div className="muted">loading...</div>}
+        <h3>{t('setup.state.title')}</h3>
+        {!status && <div className="muted">{t('setup.state.loading')}</div>}
         {status && (
           <div className="small">
             <div>
-              <b>Database:</b>{' '}
+              <b>{t('setup.state.database')}</b>{' '}
               {status.db_exists ? (
                 <>
-                  <span className="pill active">ingested</span>{' '}
-                  {status.ingested_table_count} tables ·{' '}
+                  <span className="pill active">{t('setup.state.ingested')}</span>{' '}
+                  {t('setup.state.tableCount', { n: status.ingested_table_count ?? 0 })} ·{' '}
                   {fmtBytes(status.db_size_bytes)}
-                  {status.db_modified && ` · updated ${status.db_modified}`}
+                  {status.db_modified && ` · ${t('setup.state.updated', { when: status.db_modified })}`}
                 </>
               ) : (
-                <span className="pill warn">not ingested yet</span>
+                <span className="pill warn">{t('setup.state.notIngested')}</span>
               )}
             </div>
             <div style={{ marginTop: 4 }}>
-              <b>Source folder:</b>{' '}
+              <b>{t('setup.state.sourceFolder')}</b>{' '}
               {status.source_dir ? (
                 <code>{status.source_dir}</code>
               ) : (
-                <span className="muted">not configured</span>
+                <span className="muted">{t('setup.state.notConfigured')}</span>
               )}
               {status.source_env_override && (
                 <span className="pill" style={{ marginLeft: 8 }}>
-                  from MYCHART_SOURCE env var
+                  {t('setup.state.envOverride')}
                 </span>
               )}
             </div>
             {status.last_ingest && (
               <div style={{ marginTop: 4 }} className="muted">
-                Last ingest: {status.last_ingest}
+                {t('setup.state.lastIngest', { when: status.last_ingest })}
               </div>
             )}
           </div>
@@ -213,18 +215,20 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
       </div>
 
       <div className="card">
-        <h3>1. Point to your Epic MyChart export</h3>
+        <h3>{t('setup.step1.title')}</h3>
         <p className="small muted">
-          Unzip your export first. The folder must contain{' '}
-          <code>EHITables/</code>, <code>EHITables Schema/</code>, and{' '}
-          <code>FHIR/</code>.
+          {t('setup.step1.help', {
+            ehi: 'EHITables/',
+            schema: 'EHITables Schema/',
+            fhir: 'FHIR/',
+          })}
         </p>
         <div style={{ display: 'flex', gap: 8 }}>
           <input
             type="text"
             value={path}
             onChange={(e) => setPath(e.target.value)}
-            placeholder="/absolute/path/to/your/mychart-export"
+            placeholder={t('setup.path.placeholder')}
             style={{
               flex: 1,
               padding: 8,
@@ -239,49 +243,46 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
             className="btn"
             onClick={browse}
             disabled={busy || running}
-            title="Open a native folder picker"
+            title={t('setup.btn.browseTitle')}
           >
-            Browse...
+            {t('setup.btn.browse')}
           </button>
           <button
             className="btn"
             onClick={() => validate()}
             disabled={!path || busy || running}
           >
-            Validate
+            {t('setup.btn.validate')}
           </button>
           <button
             className="btn"
             onClick={saveSource}
             disabled={!path || !info?.exists || busy || running}
           >
-            Save
+            {t('setup.btn.save')}
           </button>
         </div>
         {info && (
           <div className="small" style={{ marginTop: 12 }}>
             {!info.exists && (
               <div>
-                <span className="pill bad">folder not found</span>
+                <span className="pill bad">{t('setup.err.notFound')}</span>
               </div>
             )}
             {info.exists && (
               <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                 <li>
-                  {info.has_ehi_tables ? '✓' : '✗'} EHITables/ (
-                  {info.tsv_count ?? 0} TSV files)
+                  {info.has_ehi_tables ? '✓' : '✗'} {t('setup.info.ehi', { n: info.tsv_count ?? 0 })}
                 </li>
                 <li>
-                  {info.has_ehi_schema ? '✓' : '✗'} EHITables Schema/ (
-                  {info.schema_htm_count ?? 0} HTM files)
+                  {info.has_ehi_schema ? '✓' : '✗'} {t('setup.info.schema', { n: info.schema_htm_count ?? 0 })}
                 </li>
                 <li>
-                  {info.has_fhir ? '✓' : '✗'} FHIR/ ({info.fhir_file_count ?? 0}{' '}
-                  NDJSON files)
+                  {info.has_fhir ? '✓' : '✗'} {t('setup.info.fhir', { n: info.fhir_file_count ?? 0 })}
                 </li>
                 {info.missing && info.missing.length > 0 && (
                   <li className="warn-text">
-                    Missing: {info.missing.join(', ')}
+                    {t('setup.info.missing', { list: info.missing.join(', ') })}
                   </li>
                 )}
               </ul>
@@ -291,18 +292,16 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
       </div>
 
       <div className="card">
-        <h3>2. Run ingestion</h3>
+        <h3>{t('setup.step2.title')}</h3>
         <p className="small muted">
-          Parses the data dictionary, loads ~44 curated tables into SQLite,
-          ingests FHIR resources, and builds a full-text index of notes and
-          messages. Typically a minute or two.
+          {t('setup.step2.help')}
         </p>
         <button
           className="btn"
           onClick={runIngest}
           disabled={!ready || running}
         >
-          {running ? 'Running...' : status?.db_exists ? 'Re-ingest' : 'Start ingest'}
+          {running ? t('setup.btn.running') : status?.db_exists ? t('setup.btn.reingest') : t('setup.btn.start')}
         </button>
         {error && (
           <div className="warn-text" style={{ marginTop: 8 }}>

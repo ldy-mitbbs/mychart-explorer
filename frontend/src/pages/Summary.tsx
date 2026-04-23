@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { ageFromDob } from '../age';
 import { toDisplay, prettyName } from '../vitals_format';
+import { useT } from '../i18n';
 
 export default function Summary() {
+  const { t } = useT();
   const [data, setData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,60 +33,60 @@ export default function Summary() {
   }, []);
 
   if (error) return <div className="card" style={{ color: 'var(--danger)' }}>{error}</div>;
-  if (!data) return <div>Loading…</div>;
+  if (!data) return <div>{t('common.loading')}</div>;
 
   const p = data.patient;
   return (
     <>
-      <h1>Summary</h1>
+      <h1>{t('summary.title')}</h1>
       <div className="cards">
         <div className="card">
-          <div className="muted small">Patient</div>
+          <div className="muted small">{t('summary.patient')}</div>
           <div style={{ fontSize: 18, marginTop: 4 }}><b>{p?.name}</b></div>
           <div className="small muted" style={{ marginTop: 6 }}>
-            {ageFromDob(p?.birthDate) !== null && `Age ${ageFromDob(p?.birthDate)}`}
+            {ageFromDob(p?.birthDate) !== null && t('app.age', { age: ageFromDob(p?.birthDate) as number })}
             {p?.gender && ` · ${p.gender}`}
           </div>
 
         </div>
 
         <div className="card">
-          <div className="muted small">Active problems</div>
+          <div className="muted small">{t('summary.activeProblems')}</div>
           <div style={{ fontSize: 28, marginTop: 4 }}>{data.activeProblems.length}</div>
-          <div className="small muted">{data.problems.length} total</div>
+          <div className="small muted">{t('summary.activeProblemsTotal', { n: data.problems.length })}</div>
         </div>
 
         <div className="card">
-          <div className="muted small">Active medications</div>
+          <div className="muted small">{t('summary.activeMeds')}</div>
           <div style={{ fontSize: 28, marginTop: 4 }}>{data.activeMeds.length}</div>
-          <div className="small muted">{data.meds.length} total orders</div>
+          <div className="small muted">{t('summary.activeMedsTotal', { n: data.meds.length })}</div>
         </div>
 
         <div className="card">
-          <div className="muted small">Allergies</div>
+          <div className="muted small">{t('summary.allergies')}</div>
           <div style={{ fontSize: 28, marginTop: 4 }}>{data.allergies.length}</div>
         </div>
 
         <div className="card">
-          <div className="muted small">Immunizations</div>
+          <div className="muted small">{t('summary.immunizations')}</div>
           <div style={{ fontSize: 28, marginTop: 4 }}>{data.imms.length}</div>
         </div>
       </div>
 
-      <h2>Active problems</h2>
+      <h2>{t('summary.h2.activeProblems')}</h2>
       <div className="card">
         {data.activeProblems.length === 0 ? (
-          <div className="muted">No active problems.</div>
+          <div className="muted">{t('summary.noActiveProblems')}</div>
         ) : (
           <table className="dtable">
-            <thead><tr><th>Problem</th><th>Noted</th><th>Priority</th><th>Chronic</th></tr></thead>
+            <thead><tr><th>{t('summary.col.problem')}</th><th>{t('summary.col.noted')}</th><th>{t('summary.col.priority')}</th><th>{t('summary.col.chronic')}</th></tr></thead>
             <tbody>
               {data.activeProblems.map((p: any) => (
                 <tr key={p.PROBLEM_LIST_ID || p.id}>
                   <td>{p.DX_ID_DX_NAME || p.description}</td>
                   <td className="mono small">{(p.NOTED_DATE || p.onsetDateTime || '').slice(0, 10)}</td>
                   <td>{p.PRIORITY_C_NAME || ''}</td>
-                  <td>{p.CHRONIC_YN === 'Y' ? 'Yes' : ''}</td>
+                  <td>{p.CHRONIC_YN === 'Y' ? t('common.yes') : ''}</td>
                 </tr>
               ))}
             </tbody>
@@ -92,7 +94,7 @@ export default function Summary() {
         )}
       </div>
 
-      <h2>Latest vitals</h2>
+      <h2>{t('summary.h2.vitals')}</h2>
       <div className="card">
         {(() => {
           const priority = [
@@ -111,10 +113,10 @@ export default function Summary() {
           const rows: any[] = [...data.vitals]
             .sort((a, b) => score(a.name) - score(b.name))
             .slice(0, 8);
-          if (rows.length === 0) return <div className="muted">No vitals recorded.</div>;
+          if (rows.length === 0) return <div className="muted">{t('summary.noVitals')}</div>;
           return (
             <table className="dtable">
-              <thead><tr><th>Measurement</th><th>Value</th><th>Recorded</th></tr></thead>
+              <thead><tr><th>{t('summary.col.measurement')}</th><th>{t('summary.col.value')}</th><th>{t('summary.col.recorded')}</th></tr></thead>
               <tbody>
                 {rows.map((v: any, i: number) => {
                   const d = toDisplay(v.value, v.unit);
@@ -132,13 +134,13 @@ export default function Summary() {
         })()}
       </div>
 
-      <h2>Recent lab results</h2>
+      <h2>{t('summary.h2.labs')}</h2>
       <div className="card">
         {data.labs.length === 0 ? (
-          <div className="muted">No lab results.</div>
+          <div className="muted">{t('summary.noLabs')}</div>
         ) : (
           <table className="dtable">
-            <thead><tr><th>Component</th><th>Value</th><th>Ref range</th><th>Flag</th><th>Date</th></tr></thead>
+            <thead><tr><th>{t('summary.col.component')}</th><th>{t('summary.col.value')}</th><th>{t('summary.col.refRange')}</th><th>{t('summary.col.flag')}</th><th>{t('summary.col.date')}</th></tr></thead>
             <tbody>
               {data.labs.map((l: any, i: number) => {
                 const abnormal = l.in_range === 'N' || (l.flag && l.flag !== 'Normal');

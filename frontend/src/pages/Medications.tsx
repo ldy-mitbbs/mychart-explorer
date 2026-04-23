@@ -1,20 +1,24 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { useT } from '../i18n';
 
 export default function Medications() {
+  const { t } = useT();
   const [rows, setRows] = useState<any[]>([]);
   const [filter, setFilter] = useState<'all' | 'active'>('active');
   useEffect(() => { api<any[]>('/api/medications').then(setRows); }, []);
 
   const filtered = rows.filter((r) => filter === 'all' || !r.discontinue_reason);
+  const label = (f: 'active' | 'all') =>
+    f === 'active' ? t('meds.filter.active') : t('meds.filter.all');
 
   return (
     <>
-      <h1>Medications <span className="muted small">({filtered.length}/{rows.length})</span></h1>
+      <h1>{t('meds.title')} <span className="muted small">{t('common.countOf', { n: filtered.length, total: rows.length })}</span></h1>
       <div className="row" style={{ marginBottom: 12 }}>
         {(['active', 'all'] as const).map((f) => (
           <button key={f} className={filter === f ? 'primary' : ''} onClick={() => setFilter(f)}>
-            {f}
+            {label(f)}
           </button>
         ))}
       </div>
@@ -22,15 +26,15 @@ export default function Medications() {
         <table className="dtable">
           <thead>
             <tr>
-              <th>Medication</th>
-              <th>Dosage</th>
-              <th>Quantity</th>
-              <th>Refills</th>
-              <th>Started</th>
-              <th>Ended</th>
-              <th>Prescriber</th>
-              <th>Pharmacy</th>
-              <th>Discontinued</th>
+              <th>{t('meds.col.medication')}</th>
+              <th>{t('meds.col.dosage')}</th>
+              <th>{t('meds.col.quantity')}</th>
+              <th>{t('meds.col.refills')}</th>
+              <th>{t('meds.col.started')}</th>
+              <th>{t('meds.col.ended')}</th>
+              <th>{t('meds.col.prescriber')}</th>
+              <th>{t('meds.col.pharmacy')}</th>
+              <th>{t('meds.col.discontinued')}</th>
             </tr>
           </thead>
           <tbody>

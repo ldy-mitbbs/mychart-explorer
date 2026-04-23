@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import { useT } from '../i18n';
 
 interface TableMeta {
   name: string;
@@ -22,6 +23,7 @@ interface TableData {
 }
 
 export default function Tables() {
+  const { t } = useT();
   const [tables, setTables] = useState<TableMeta[]>([]);
   const [filter, setFilter] = useState('');
   const [onlyIngested, setOnlyIngested] = useState(true);
@@ -69,57 +71,57 @@ export default function Tables() {
 
   return (
     <>
-      <h1>Tables browser</h1>
+      <h1>{t('tables.title')}</h1>
       <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 16 }}>
         <div className="card" style={{ maxHeight: 'calc(100vh - 160px)', overflowY: 'auto' }}>
           <input
-            placeholder="filter tables…"
+            placeholder={t('tables.filter.placeholder')}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             style={{ width: '100%', marginBottom: 8 }}
           />
           <label className="small row" style={{ gap: 6, marginBottom: 8 }}>
             <input type="checkbox" checked={onlyIngested} onChange={(e) => setOnlyIngested(e.target.checked)} />
-            only ingested ({tables.filter((t) => t.ingested).length})
+            {t('tables.onlyIngested', { n: tables.filter((t) => t.ingested).length })}
           </label>
-          <div className="small muted">{visible.length} tables</div>
-          {visible.map((t) => (
+          <div className="small muted">{t('tables.count', { n: visible.length })}</div>
+          {visible.map((tbl) => (
             <div
-              key={t.name}
-              onClick={() => setSelected(t.name)}
+              key={tbl.name}
+              onClick={() => setSelected(tbl.name)}
               style={{
                 padding: '6px 8px', cursor: 'pointer', borderRadius: 4,
-                background: selected === t.name ? 'var(--panel-2)' : 'transparent',
+                background: selected === tbl.name ? 'var(--panel-2)' : 'transparent',
                 fontSize: 12,
               }}
             >
               <div>
-                <span className="mono">{t.name}</span>{' '}
-                {t.ingested && <span className="pill active" style={{ fontSize: 9 }}>ingested</span>}
+                <span className="mono">{tbl.name}</span>{' '}
+                {tbl.ingested && <span className="pill active" style={{ fontSize: 9 }}>{t('tables.ingested')}</span>}
               </div>
-              {t.description && <div className="muted small">{t.description.slice(0, 80)}</div>}
+              {tbl.description && <div className="muted small">{tbl.description.slice(0, 80)}</div>}
             </div>
           ))}
         </div>
 
         <div>
           <div className="card">
-            <h2 style={{ marginTop: 0 }}>SQL (SELECT only)</h2>
+            <h2 style={{ marginTop: 0 }}>{t('tables.sql.title')}</h2>
             <textarea
               rows={3}
               value={sql}
               onChange={(e) => setSql(e.target.value)}
-              placeholder='e.g. SELECT MEDICATION_ID_MEDICATION_NAME, COUNT(*) n FROM ORDER_MED GROUP BY 1 ORDER BY n DESC'
+              placeholder={t('tables.sql.placeholder')}
               style={{ width: '100%' }}
             />
             <div className="row" style={{ marginTop: 8, justifyContent: 'space-between' }}>
-              <span className="small muted">Auto-LIMITed to 500 rows. Read-only.</span>
-              <button className="primary" onClick={runSql}>Run</button>
+              <span className="small muted">{t('tables.sql.hint')}</span>
+              <button className="primary" onClick={runSql}>{t('tables.sql.run')}</button>
             </div>
             {sqlErr && <div className="small" style={{ color: 'var(--danger)', marginTop: 8 }}>{sqlErr}</div>}
             {sqlResult && (
               <div style={{ marginTop: 10, overflow: 'auto', maxHeight: 280 }}>
-                <div className="small muted">{sqlResult.count} rows · <span className="mono">{sqlResult.sql}</span></div>
+                <div className="small muted">{t('tables.sql.rows', { n: sqlResult.count })} · <span className="mono">{sqlResult.sql}</span></div>
                 {sqlResult.rows.length > 0 && (
                   <table className="dtable">
                     <thead><tr>{sqlResult.columns.map((c: string) => <th key={c}>{c}</th>)}</tr></thead>
@@ -144,17 +146,18 @@ export default function Tables() {
 
               <div className="row" style={{ marginTop: 8, marginBottom: 8 }}>
                 <input
-                  placeholder="row filter (substring match across all columns)"
+                  placeholder={t('tables.rowFilter.placeholder')}
                   value={search}
                   onChange={(e) => { setSearch(e.target.value); setOffset(0); }}
                   style={{ width: 320 }}
                 />
                 <span className="grow" />
                 <span className="small muted">
-                  {data.total !== null && `${data.total} total · `}rows {data.offset + 1}–{data.offset + data.rows.length}
+                  {data.total !== null && `${t('tables.totalPrefix', { n: data.total })} · `}
+                  {t('tables.rowsRange', { from: data.offset + 1, to: data.offset + data.rows.length })}
                 </span>
-                <button onClick={() => setOffset(Math.max(0, offset - 100))} disabled={offset === 0}>Prev</button>
-                <button onClick={() => setOffset(offset + 100)} disabled={data.rows.length < 100}>Next</button>
+                <button onClick={() => setOffset(Math.max(0, offset - 100))} disabled={offset === 0}>{t('common.prev')}</button>
+                <button onClick={() => setOffset(offset + 100)} disabled={data.rows.length < 100}>{t('common.next')}</button>
               </div>
 
               <div style={{ overflow: 'auto', maxHeight: 460 }}>

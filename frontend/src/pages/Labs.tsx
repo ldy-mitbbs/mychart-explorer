@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import { useT } from '../i18n';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   ReferenceArea, CartesianGrid, ReferenceLine,
@@ -12,6 +13,7 @@ interface Point {
 }
 
 export default function Labs() {
+  const { t } = useT();
   const [comps, setComps] = useState<Component[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [series, setSeries] = useState<Point[]>([]);
@@ -45,17 +47,17 @@ export default function Labs() {
 
   return (
     <>
-      <h1>Labs</h1>
+      <h1>{t('labs.title')}</h1>
       <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 16 }}>
         <div className="card" style={{ maxHeight: 'calc(100vh - 160px)', overflowY: 'auto' }}>
           <input
-            placeholder="filter components…"
+            placeholder={t('labs.filter.placeholder')}
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             style={{ width: '100%', marginBottom: 8 }}
           />
           <div className="small muted" style={{ marginBottom: 4 }}>
-            {visibleComps.length} components
+            {t('labs.components', { n: visibleComps.length })}
           </div>
           {visibleComps.map((c) => (
             <div
@@ -76,13 +78,13 @@ export default function Labs() {
         </div>
 
         <div>
-          {!selected && <div className="card muted">Select a component to see its trend.</div>}
+          {!selected && <div className="card muted">{t('labs.selectPrompt')}</div>}
           {selected && (
             <>
               <div className="card">
                 <h2 style={{ marginTop: 0, border: 0 }}>{selected} {unit && <span className="muted small">({unit})</span>}</h2>
                 {chartData.length === 0 ? (
-                  <div className="muted">No numeric values for this component.</div>
+                  <div className="muted">{t('labs.noNumeric')}</div>
                 ) : (
                   <div style={{ width: '100%', height: 280 }}>
                     <ResponsiveContainer>
@@ -108,7 +110,7 @@ export default function Labs() {
 
               <div className="card">
                 <table className="dtable">
-                  <thead><tr><th>Date</th><th>Value</th><th>Range</th><th>Unit</th><th>Flag</th></tr></thead>
+                  <thead><tr><th>{t('labs.col.date')}</th><th>{t('labs.col.value')}</th><th>{t('labs.col.range')}</th><th>{t('labs.col.unit')}</th><th>{t('labs.col.flag')}</th></tr></thead>
                   <tbody>
                     {series.map((p, i) => (
                       <tr key={i}>

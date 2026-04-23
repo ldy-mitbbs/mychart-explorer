@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
+import { useT } from '../i18n';
 
 type Row = {
   note_id: string;
@@ -11,6 +12,7 @@ type Row = {
 };
 
 export default function Imaging() {
+  const { t } = useT();
   const [rows, setRows] = useState<Row[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<any>(null);
@@ -26,17 +28,16 @@ export default function Imaging() {
 
   return (
     <>
-      <h1>Imaging <span className="muted small">({rows.length})</span></h1>
+      <h1>{t('imaging.title')} <span className="muted small">{t('common.count', { n: rows.length })}</span></h1>
       {rows.length === 0 && (
         <div className="card muted">
-          No imaging studies found. If you re-ingested after upgrading, your
-          export may not contain imaging Observations or DiagnosticReports.
+          {t('imaging.empty')}
         </div>
       )}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.4fr', gap: 16 }}>
         <div className="card" style={{ maxHeight: 'calc(100vh - 200px)', overflowY: 'auto' }}>
           <table className="dtable">
-            <thead><tr><th>Date</th><th>Study</th><th>Reader</th></tr></thead>
+            <thead><tr><th>{t('imaging.col.date')}</th><th>{t('imaging.col.study')}</th><th>{t('imaging.col.reader')}</th></tr></thead>
             <tbody>
               {rows.map((r) => (
                 <tr
@@ -60,12 +61,12 @@ export default function Imaging() {
           </table>
         </div>
         <div>
-          {!detail && <div className="card muted">Select a study to read the full report.</div>}
+          {!detail && <div className="card muted">{t('imaging.selectPrompt')}</div>}
           {detail && (
             <div className="card">
               <div className="row" style={{ justifyContent: 'space-between' }}>
                 <div>
-                  <h2 style={{ margin: 0, border: 0 }}>{detail.description || 'Imaging study'}</h2>
+                  <h2 style={{ margin: 0, border: 0 }}>{detail.description || t('imaging.defaultTitle')}</h2>
                   <div className="small muted">
                     {detail.author && `${detail.author} · `}{(detail.created || '').slice(0, 16)}
                     {detail.pat_enc_csn && ` · CSN ${detail.pat_enc_csn}`}
@@ -75,7 +76,7 @@ export default function Imaging() {
                 <button onClick={() => setSelected(null)}>×</button>
               </div>
               <div className="note-body" style={{ marginTop: 10 }}>
-                {detail.full_text || <span className="muted">(no body)</span>}
+                {detail.full_text || <span className="muted">{t('imaging.noBody')}</span>}
               </div>
             </div>
           )}

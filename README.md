@@ -16,7 +16,8 @@
   `get_patient_summary`、`list_tables`、`describe_table`、`run_sql`、
   `search_notes`、`get_note`、`get_message` 和 `lab_trend`。回答会附带 source citation，例如
   `[note:123]`、`[msg:456]`、`[table:PROBLEMS code=...]`。
-- **Pluggable LLM**：支持 Ollama（默认，本地）、OpenAI 和 Anthropic。启用 cloud provider 时，界面上会显示红色的 *"PHI sent to …"（个人健康信息已发送至…）* warning banner。
+- **Pluggable LLM**：支持 Ollama（默认,本地）、OpenAI 和 Anthropic。启用 cloud provider 时,界面上会显示红色的 *"PHI sent to …"(个人健康信息已发送至…)* warning banner。
+- **中英双语界面（English / 简体中文）**：顶部导航栏可切换语言,偏好会保存在 localStorage 中,首次访问时会根据浏览器语言自动判断(`zh-*` 浏览器默认中文)。非常适合把这个应用分享给英文阅读不便的家人长辈——用中文提问,本地 LLM 也会用中文作答。
 
 ## Screenshots
 

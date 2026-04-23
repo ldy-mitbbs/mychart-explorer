@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { Patient } from './api';
 import { api } from './api';
 import { ageFromDob } from './age';
+import { useT, type TKey } from './i18n';
 import Summary from './pages/Summary';
 import Problems from './pages/Problems';
 import Allergies from './pages/Allergies';
@@ -23,25 +24,26 @@ type Page =
   | 'encounters' | 'imaging' | 'notes' | 'messages' | 'immunizations'
   | 'history' | 'tables' | 'chat' | 'setup';
 
-const nav: { key: Page; label: string; section?: string }[] = [
-  { key: 'summary', label: 'Summary', section: 'Overview' },
-  { key: 'chat', label: 'Ask AI' },
-  { key: 'problems', label: 'Problems', section: 'Clinical' },
-  { key: 'medications', label: 'Medications' },
-  { key: 'allergies', label: 'Allergies' },
-  { key: 'labs', label: 'Labs' },
-  { key: 'vitals', label: 'Vitals' },
-  { key: 'immunizations', label: 'Immunizations' },
-  { key: 'history', label: 'History' },
-  { key: 'encounters', label: 'Encounters', section: 'Records' },
-  { key: 'imaging', label: 'Imaging' },
-  { key: 'notes', label: 'Notes' },
-  { key: 'messages', label: 'Messages' },
-  { key: 'tables', label: 'Tables browser', section: 'Advanced' },
-  { key: 'setup', label: 'Setup' },
+const nav: { key: Page; labelKey: TKey; sectionKey?: TKey }[] = [
+  { key: 'summary', labelKey: 'nav.summary', sectionKey: 'nav.section.overview' },
+  { key: 'chat', labelKey: 'nav.chat' },
+  { key: 'problems', labelKey: 'nav.problems', sectionKey: 'nav.section.clinical' },
+  { key: 'medications', labelKey: 'nav.medications' },
+  { key: 'allergies', labelKey: 'nav.allergies' },
+  { key: 'labs', labelKey: 'nav.labs' },
+  { key: 'vitals', labelKey: 'nav.vitals' },
+  { key: 'immunizations', labelKey: 'nav.immunizations' },
+  { key: 'history', labelKey: 'nav.history' },
+  { key: 'encounters', labelKey: 'nav.encounters', sectionKey: 'nav.section.records' },
+  { key: 'imaging', labelKey: 'nav.imaging' },
+  { key: 'notes', labelKey: 'nav.notes' },
+  { key: 'messages', labelKey: 'nav.messages' },
+  { key: 'tables', labelKey: 'nav.tables', sectionKey: 'nav.section.advanced' },
+  { key: 'setup', labelKey: 'nav.setup' },
 ];
 
 export default function App() {
+  const { t, lang, setLang } = useT();
   const [page, setPage] = useState<Page>('summary');
   const [patient, setPatient] = useState<Patient | null>(null);
   const [provider, setProvider] = useState<string>('ollama');
@@ -94,31 +96,44 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div>
-          <span className="brand">MyChart Explorer</span>
+          <span className="brand">{t('app.brand')}</span>
           {patient && (
             <span className="meta" style={{ marginLeft: 16 }}>
               <b>{patient.name}</b>
-              {ageFromDob(patient.birthDate) !== null && ` · Age ${ageFromDob(patient.birthDate)}`}
+              {ageFromDob(patient.birthDate) !== null && ` · ${t('app.age', { age: ageFromDob(patient.birthDate) as number })}`}
               {patient.gender && ` · ${patient.gender}`}
-              {patient.mrn && ` · MRN ${patient.mrn}`}
+              {patient.mrn && ` · ${t('app.mrn', { mrn: patient.mrn })}`}
             </span>
           )}
         </div>
-        <div className="small muted">
-          LLM: <b style={{ color: 'var(--text)' }}>{provider}</b>
-          {cloudActive && <span className="warn">PHI sent to {provider}</span>}
+        <div className="row small muted" style={{ gap: 12 }}>
+          <label className="row" style={{ gap: 4, alignItems: 'center' }}>
+            <span>{t('app.language')}:</span>
+            <select
+              value={lang}
+              onChange={(e) => setLang(e.target.value as 'en' | 'zh')}
+              style={{ fontSize: 12 }}
+            >
+              <option value="en">{t('app.lang.en')}</option>
+              <option value="zh">{t('app.lang.zh')}</option>
+            </select>
+          </label>
+          <span>
+            {t('app.llm')}: <b style={{ color: 'var(--text)' }}>{provider}</b>
+            {cloudActive && <span className="warn"> {t('app.phiWarn', { provider })}</span>}
+          </span>
         </div>
       </header>
 
       <nav className="sidebar">
         {nav.map((n) => (
           <div key={n.key}>
-            {n.section && <div className="section">{n.section}</div>}
+            {n.sectionKey && <div className="section">{t(n.sectionKey)}</div>}
             <button
               className={page === n.key ? 'active' : ''}
               onClick={() => setPage(n.key)}
             >
-              {n.label}
+              {t(n.labelKey)}
             </button>
           </div>
         ))}
