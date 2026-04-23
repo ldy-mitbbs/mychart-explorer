@@ -16,6 +16,7 @@ FHIR/
 *.ndjson
 *.htm
 *.html
+!frontend/index.html
 
 # API keys / env
 .env

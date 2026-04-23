@@ -11,6 +11,44 @@ interface Msg {
 
 interface ToolCallEvent { id: string; name: string; arguments: any; result?: string; }
 
+function CopyCmd({ cmd, hint }: { cmd: string; hint?: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(cmd);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* ignore */ }
+  };
+  return (
+    <div
+      className="small"
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 6,
+        marginLeft: 8,
+        padding: '4px 6px 4px 10px',
+        background: 'var(--bg-2)',
+        border: '1px solid var(--border)',
+        borderRadius: 6,
+        fontFamily: 'ui-monospace, monospace',
+      }}
+      title={hint || 'Run this in Terminal (macOS) or PowerShell (Windows)'}
+    >
+      <span>{cmd}</span>
+      <button
+        className="btn"
+        onClick={copy}
+        style={{ padding: '2px 8px', fontSize: 11 }}
+      >
+        {copied ? 'copied' : 'copy'}
+      </button>
+    </div>
+  );
+}
+
 interface Settings {
   llm_provider?: string;
   ollama_model?: string;
@@ -420,15 +458,35 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
                       />
                     )}
                   {ollamaModelsError && (
-                    <span className="small warn-text" style={{ marginLeft: 8 }}>
-                      {ollamaModelsError} — is `ollama serve` running?
-                    </span>
+                    <>
+                      <span className="small warn-text" style={{ marginLeft: 8 }}>
+                        {ollamaModelsError} — is Ollama running?
+                      </span>
+                      <CopyCmd cmd="ollama serve" hint="Start the Ollama server" />
+                    </>
                   )}
                   {ollamaModels && ollamaModels.length === 0 && !ollamaModelsError && (
-                    <span className="small muted" style={{ marginLeft: 8 }}>
-                      No models installed. Try <code>ollama pull llama3.1:8b</code>.
-                    </span>
+                    <>
+                      <span className="small muted" style={{ marginLeft: 8 }}>
+                        No models installed. Run this to pull one:
+                      </span>
+                      <CopyCmd cmd="ollama pull llama3.1:8b" />
+                    </>
                   )}
+                  {ollamaModels &&
+                    ollamaModels.length > 0 &&
+                    settings.ollama_model &&
+                    !ollamaModels.includes(settings.ollama_model) && (
+                      <>
+                        <span className="small warn-text" style={{ marginLeft: 8 }}>
+                          Model <code>{settings.ollama_model}</code> is not installed.
+                        </span>
+                        <CopyCmd
+                          cmd={`ollama pull ${settings.ollama_model}`}
+                          hint="Run in Terminal (macOS) or PowerShell (Windows), then click ↻ to refresh"
+                        />
+                      </>
+                    )}
                 </label>
                 <label>URL
                   <input
@@ -517,11 +575,33 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
           </div>
         )}
 
-        {error && (
-          <div className="msg assistant">
-            <div className="bubble" style={{ color: 'var(--danger)' }}>Error: {error}</div>
-          </div>
-        )}
+        {error && (() => {
+          const m = error.match(/model ["']?([\w.:\-/]+)["']? not found/i);
+          const missing = m?.[1] || (/not found.*pulling it first/i.test(error) ? settings.ollama_model : null);
+          const unreachable = /Connection refused|ECONNREFUSED|Could not reach|Failed to connect/i.test(error);
+          return (
+            <div className="msg assistant">
+              <div className="bubble" style={{ color: 'var(--danger)' }}>
+                <div>Error: {error}</div>
+                {missing && settings.llm_provider === 'ollama' && (
+                  <div style={{ marginTop: 6 }}>
+                    <span className="small">Fix: pull the model, then retry.</span>
+                    <CopyCmd
+                      cmd={`ollama pull ${missing}`}
+                      hint="Run in Terminal (macOS) or PowerShell (Windows)"
+                    />
+                  </div>
+                )}
+                {unreachable && settings.llm_provider === 'ollama' && (
+                  <div style={{ marginTop: 6 }}>
+                    <span className="small">Fix: start the Ollama server.</span>
+                    <CopyCmd cmd="ollama serve" />
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="composer">

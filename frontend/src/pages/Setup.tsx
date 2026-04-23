@@ -67,17 +67,36 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [log]);
 
-  const validate = async () => {
+  const validate = async (override?: string) => {
+    const target = override ?? path;
     setError('');
     setBusy(true);
     try {
       const r = await api<SourceInfo>(
-        `/api/admin/validate?path=${encodeURIComponent(path)}`,
+        `/api/admin/validate?path=${encodeURIComponent(target)}`,
       );
       setInfo(r);
     } catch (e: any) {
       setError(e.message || 'validation failed');
       setInfo(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const browse = async () => {
+    setError('');
+    setBusy(true);
+    try {
+      const r = await api<{ path: string }>('/api/admin/pick-folder', {
+        method: 'POST',
+      });
+      if (r.path) {
+        setPath(r.path);
+        await validate(r.path);
+      }
+    } catch (e: any) {
+      setError(e.message || 'could not open folder picker');
     } finally {
       setBusy(false);
     }
@@ -218,7 +237,15 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
           />
           <button
             className="btn"
-            onClick={validate}
+            onClick={browse}
+            disabled={busy || running}
+            title="Open a native folder picker"
+          >
+            Browse...
+          </button>
+          <button
+            className="btn"
+            onClick={() => validate()}
             disabled={!path || busy || running}
           >
             Validate

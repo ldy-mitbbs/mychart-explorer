@@ -90,3 +90,21 @@ def table_columns(name: str) -> list[str]:
     with cursor() as cur:
         cur.execute(f'PRAGMA table_info("{name}")')
         return [r[1] for r in cur.fetchall()]
+
+
+_FTS_TOKEN = __import__("re").compile(r"[A-Za-z0-9]+")
+
+
+def fts_query(user_text: str) -> str:
+    """Sanitize free-form text into a safe FTS5 MATCH expression.
+
+    FTS5 treats `-`, `:`, `"`, `(`, `)`, `*`, `^`, and bare words like
+    `AND`/`OR`/`NOT`/`NEAR` as operators, so passing raw model-generated
+    strings (e.g. `2026-04-13 office visit`) blows up with errors like
+    `no such column: 04`. We tokenize on alphanumerics and emit each token
+    as a quoted phrase, AND-ed implicitly by whitespace.
+    """
+    tokens = _FTS_TOKEN.findall(user_text or "")
+    if not tokens:
+        return ""
+    return " ".join(f'"{t}"' for t in tokens)

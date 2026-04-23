@@ -342,6 +342,9 @@ def list_notes(
 ) -> list[dict]:
     if q:
         # FTS5 search.
+        match = db.fts_query(q)
+        if not match:
+            return []
         sql = (
             "SELECT n.note_id, n.description, n.note_type, n.author, "
             "n.created, n.pat_enc_csn, "
@@ -349,7 +352,7 @@ def list_notes(
             "FROM notes_fts f JOIN notes_assembled n ON n.note_id = f.note_id "
             "WHERE notes_fts MATCH ? "
         )
-        params: list = [q]
+        params: list = [match]
         if csn:
             sql += "AND n.pat_enc_csn = ? "
             params.append(csn)
@@ -384,6 +387,9 @@ def get_note(note_id: str) -> dict:
 @router.get("/messages")
 def list_messages(q: str | None = None, limit: int = 200) -> list[dict]:
     if q:
+        match = db.fts_query(q)
+        if not match:
+            return []
         sql = (
             "SELECT m.msg_id, m.sent, m.from_user, m.subject, "
             "snippet(messages_fts, 2, '<mark>', '</mark>', '…', 20) AS snippet "
@@ -391,7 +397,7 @@ def list_messages(q: str | None = None, limit: int = 200) -> list[dict]:
             "JOIN messages_assembled m ON m.msg_id = f.msg_id "
             "WHERE messages_fts MATCH ? ORDER BY rank LIMIT ?"
         )
-        return db.query(sql, (q, limit))
+        return db.query(sql, (match, limit))
     return db.query(
         "SELECT msg_id, sent, from_user, subject "
         "FROM messages_assembled ORDER BY sent DESC LIMIT ?",
@@ -413,19 +419,22 @@ def get_message(msg_id: str) -> dict:
 
 @router.get("/search")
 def global_search(q: str, limit: int = 50) -> dict:
+    match = db.fts_query(q)
+    if not match:
+        return {"notes": [], "messages": [], "q": q}
     notes = db.query(
         "SELECT n.note_id, n.description, n.created, n.note_type, "
         "snippet(notes_fts, 2, '<mark>', '</mark>', '…', 15) AS snippet "
         "FROM notes_fts f JOIN notes_assembled n ON n.note_id = f.note_id "
         "WHERE notes_fts MATCH ? ORDER BY rank LIMIT ?",
-        (q, limit),
+        (match, limit),
     )
     msgs = db.query(
         "SELECT m.msg_id, m.subject, m.sent, m.from_user, "
         "snippet(messages_fts, 2, '<mark>', '</mark>', '…', 15) AS snippet "
         "FROM messages_fts f JOIN messages_assembled m ON m.msg_id = f.msg_id "
         "WHERE messages_fts MATCH ? ORDER BY rank LIMIT ?",
-        (q, limit),
+        (match, limit),
     )
     return {"notes": notes, "messages": msgs}
 

@@ -12,6 +12,8 @@ from __future__ import annotations
 import asyncio
 import json
 import queue
+import subprocess
+import sys
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -89,6 +91,52 @@ def set_source(body: SourceBody) -> dict:
 def validate(path: str) -> dict:
     p = Path(path.strip()).expanduser()
     return _describe(p)
+
+
+@router.post("/pick-folder")
+def pick_folder() -> dict:
+    """Open a native OS folder picker on the machine running the backend.
+
+    Returns {"path": "/abs/path"} on selection, {"path": ""} on cancel.
+    Browsers don't expose absolute paths, so this has to run server-side —
+    which is fine since this app is meant to run locally.
+    """
+    path = _open_native_folder_picker()
+    return {"path": path or ""}
+
+
+def _open_native_folder_picker() -> str:
+    prompt = "Select your MyChart export folder"
+    try:
+        if sys.platform == "darwin":
+            script = f'POSIX path of (choose folder with prompt "{prompt}")'
+            r = subprocess.run(
+                ["osascript", "-e", script],
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            if r.returncode != 0:
+                return ""  # user canceled
+            return r.stdout.strip().rstrip("/")
+        # tkinter fallback for Linux/Windows — run in a subprocess so the
+        # Tk event loop doesn't collide with the FastAPI server.
+        code = (
+            "import tkinter as tk\n"
+            "from tkinter import filedialog\n"
+            "r = tk.Tk(); r.withdraw(); r.attributes('-topmost', True)\n"
+            f"p = filedialog.askdirectory(title={prompt!r})\n"
+            "print(p or '')\n"
+        )
+        r = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        return r.stdout.strip()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(500, f"Could not open folder picker: {e}")
 
 
 def _describe(source: Path) -> dict:

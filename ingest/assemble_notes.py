@@ -13,12 +13,16 @@ function simply logs and moves on — this keeps ingest resilient.
 
 from __future__ import annotations
 
+import html
+import json
 import re
 import sqlite3
 
 
 _RTF_CTRL = re.compile(r"\\[a-zA-Z]+-?\d*\s?|\\[\\{}]|[\{\}]")
 _RTF_HEX = re.compile(r"\\'([0-9a-fA-F]{2})")
+_HTML_TAG = re.compile(r"<[^>]+>")
+_HTML_BLOCK = re.compile(r"</(p|div|br|li|tr|h\d)>", re.I)
 
 
 def _rtf_to_text(rtf: str) -> str:
@@ -32,6 +36,21 @@ def _rtf_to_text(rtf: str) -> str:
     s = _RTF_HEX.sub(lambda m: chr(int(m.group(1), 16)) if int(m.group(1), 16) < 128 else "?", rtf)
     s = _RTF_CTRL.sub(" ", s)
     s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _html_to_text(src: str) -> str:
+    """Lossy HTML -> plain text. Keeps block-level line breaks."""
+    if not src:
+        return ""
+    # Drop script/style blocks entirely.
+    s = re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", src, flags=re.I | re.S)
+    # Turn closing block tags into newlines so paragraphs stay separated.
+    s = _HTML_BLOCK.sub("\n", s)
+    s = _HTML_TAG.sub(" ", s)
+    s = html.unescape(s)
+    s = re.sub(r"[ \t]+", " ", s)
+    s = re.sub(r"\s*\n\s*", "\n", s).strip()
     return s
 
 
@@ -154,6 +173,15 @@ def assemble(conn: sqlite3.Connection, log=print) -> dict[str, int]:
     else:
         log("  HNO_INFO not present — skipping notes assembly")
 
+    # --- Enrich notes from FHIR DocumentReference + Binary ---
+    # Epic exports often omit NOTE_TEXT (rich text) from the TSV bundle, so
+    # most notes in HNO_INFO end up with empty bodies. The same narrative is
+    # usually attached to a DocumentReference whose identifier value is the
+    # NOTE_ID and whose content[].attachment.url points at a Binary.
+    enriched = _enrich_notes_from_fhir(conn, log=log)
+    if enriched:
+        stats["notes_enriched_from_fhir"] = enriched
+
     # --- MyChart messages ---
     cur.executescript(
         """
@@ -264,3 +292,132 @@ def assemble(conn: sqlite3.Connection, log=print) -> dict[str, int]:
     conn.commit()
     log("  FTS5 indexes built")
     return stats
+
+
+def _enrich_notes_from_fhir(conn: sqlite3.Connection, log=print) -> int:
+    """Fill in empty notes_assembled rows from FHIR DocumentReference/Binary.
+
+    For each DocumentReference, the first identifier.value is the Epic
+    NOTE_ID. content[].attachment.url looks like 'Binary/<id>' and points at
+    a base64-decoded row in fhir_binaries. We prefer the text/html attachment
+    (simpler to strip) and fall back to text/rtf.
+
+    Returns the number of notes_assembled rows updated.
+    """
+    if not (_table_exists(conn, "fhir_resources") and _table_exists(conn, "fhir_binaries")):
+        return 0
+    if not _table_exists(conn, "notes_assembled"):
+        return 0
+
+    cur = conn.cursor()
+    binaries: dict[str, tuple[str, str]] = {
+        r[0]: (r[1] or "", r[2] or "")
+        for r in cur.execute("SELECT id, content_type, text FROM fhir_binaries")
+    }
+    if not binaries:
+        return 0
+
+    existing_ids: set[str] = {
+        r[0]
+        for r in cur.execute(
+            "SELECT note_id FROM notes_assembled "
+            "WHERE full_text IS NULL OR full_text = ''"
+        )
+    }
+
+    updates: list[tuple[str, str, str, str, str]] = []
+    inserts: list[tuple[str, str, str, str, str, str, str]] = []
+
+    rows = cur.execute(
+        "SELECT json FROM fhir_resources WHERE resource_type='DocumentReference'"
+    ).fetchall()
+    for (raw,) in rows:
+        try:
+            doc = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        note_id = ""
+        for ident in doc.get("identifier") or []:
+            val = ident.get("value") or ""
+            # Epic NOTE_IDs are numeric strings; the other identifier is a
+            # long dotted OID — skip that one.
+            if val and val.isdigit():
+                note_id = val
+                break
+        if not note_id:
+            continue
+
+        # Pick the best attachment: prefer HTML, fall back to RTF, else anything.
+        best_text = ""
+        best_ct = ""
+        for c in doc.get("content") or []:
+            att = c.get("attachment") or {}
+            url = att.get("url") or ""
+            ct = (att.get("contentType") or "").lower()
+            if not url.startswith("Binary/"):
+                continue
+            bin_id = url.split("/", 1)[1]
+            ct_bin, txt = binaries.get(bin_id, ("", ""))
+            if not txt:
+                continue
+            ct = ct or ct_bin
+            if "html" in ct:
+                plain = _html_to_text(txt)
+            elif "rtf" in ct:
+                plain = _rtf_to_text(txt)
+            else:
+                plain = txt
+            if not plain:
+                continue
+            # Prefer html > rtf > other; longer also wins within same tier.
+            tier = 2 if "html" in ct else 1 if "rtf" in ct else 0
+            cur_tier = 2 if "html" in best_ct else 1 if "rtf" in best_ct else 0
+            if tier > cur_tier or (tier == cur_tier and len(plain) > len(best_text)):
+                best_text = plain
+                best_ct = ct
+
+        if not best_text:
+            continue
+
+        desc = (doc.get("type") or {}).get("text") or ""
+        created = (
+            doc.get("date")
+            or (doc.get("context") or {}).get("period", {}).get("start")
+            or ""
+        )
+        author = ""
+        for a in doc.get("author") or []:
+            disp = a.get("display")
+            if disp:
+                author = disp
+                break
+        note_type = desc
+
+        if note_id in existing_ids:
+            updates.append((best_text, desc, created, author, note_id))
+        else:
+            inserts.append(
+                (note_id, "", note_type, author, created, desc, best_text)
+            )
+
+    if updates:
+        cur.executemany(
+            "UPDATE notes_assembled SET "
+            "full_text = ?, "
+            "description = COALESCE(NULLIF(description,''), ?), "
+            "created     = COALESCE(NULLIF(created,''),     ?), "
+            "author      = COALESCE(NULLIF(author,''),      ?) "
+            "WHERE note_id = ?",
+            updates,
+        )
+    if inserts:
+        cur.executemany(
+            "INSERT OR IGNORE INTO notes_assembled "
+            "(note_id, pat_enc_csn, note_type, author, created, description, full_text) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            inserts,
+        )
+    conn.commit()
+    total = len(updates) + len(inserts)
+    log(f"  enriched {len(updates)} notes + inserted {len(inserts)} from FHIR")
+    return total

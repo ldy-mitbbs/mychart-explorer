@@ -130,22 +130,26 @@ def run_sql(query: str, max_rows: int = MAX_ROWS, **_: Any) -> dict:
 
 
 def search_notes(q: str, limit: int = 20, **_: Any) -> dict:
+    match = db.fts_query(q)
+    if not match:
+        return {"notes": [], "messages": [], "hint": "empty query after sanitization"}
+    lim = max(1, min(limit, 50))
     rows = db.query(
         "SELECT n.note_id, n.description, n.note_type, n.author, n.created, "
         "n.pat_enc_csn, "
         "snippet(notes_fts, 2, '<<', '>>', '…', 20) AS snippet "
         "FROM notes_fts f JOIN notes_assembled n ON n.note_id = f.note_id "
         "WHERE notes_fts MATCH ? ORDER BY rank LIMIT ?",
-        (q, max(1, min(limit, 50))),
+        (match, lim),
     )
     msgs = db.query(
         "SELECT m.msg_id, m.sent, m.from_user, m.subject, "
         "snippet(messages_fts, 2, '<<', '>>', '…', 20) AS snippet "
         "FROM messages_fts f JOIN messages_assembled m ON m.msg_id = f.msg_id "
         "WHERE messages_fts MATCH ? ORDER BY rank LIMIT ?",
-        (q, max(1, min(limit, 50))),
+        (match, lim),
     )
-    return {"notes": rows, "messages": msgs}
+    return {"notes": rows, "messages": msgs, "match": match}
 
 
 def get_note(note_id: str, **_: Any) -> dict:
