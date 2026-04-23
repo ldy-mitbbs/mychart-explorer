@@ -61,7 +61,7 @@ mychart-explorer/
 ## Quick start
 
 ```sh
-git clone https://github.com/YOURNAME/mychart-explorer.git
+git clone https://github.com/ldy-mitbbs/mychart-explorer.git
 cd mychart-explorer
 
 # 1. Python env + deps
