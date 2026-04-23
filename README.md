@@ -30,12 +30,15 @@ unless you explicitly opt in to a cloud provider.
 
 ## Screenshots
 
-Screenshots live in `docs/screenshots/`. Drop PNGs there to populate:
+![Ask AI answering a question with note and lab-trend citations](docs/screenshots/chat1.png)
 
-- ![Setup](docs/screenshots/setup.png)
-- ![Summary](docs/screenshots/summary.png)
-- ![Labs](docs/screenshots/labs.png)
-- ![Chat](docs/screenshots/chat.png)
+![Same question answered in Chinese — the local model handles multilingual queries](docs/screenshots/chat2.png)
+
+![Summary dashboard with active problems, latest vitals, and recent labs](docs/screenshots/summary.png)
+
+![Lab trend chart for HEMOGLOBIN A1C](docs/screenshots/labs.png)
+
+![Setup page showing ingestion state](docs/screenshots/setup.png)
 
 ## Architecture
 
