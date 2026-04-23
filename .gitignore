@@ -42,6 +42,7 @@ frontend/.vite/
 frontend/.turbo/
 node_modules/
 dist/
+*.tsbuildinfo
 
 # --- Editor / OS ----------------------------------------------------------
 .DS_Store
