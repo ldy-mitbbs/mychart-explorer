@@ -98,11 +98,44 @@ python -m ingest --source "/path/to/your/Epic Export" --db data/mychart.db
 ```sh
 brew install ollama           # or see ollama.com for your platform
 ollama serve &
-ollama pull qwen3.6           # or llama3.1:8b for less RAM
+ollama pull qwen3:8b          # see the size guide below
 ```
 
-In the app's **Ask AI** tab → *Settings*, set the model name to whatever
-`ollama list` shows.
+In the app's **Ask AI** tab → *Settings*, pick a model from the dropdown
+(populated from `ollama list`). The chat uses tool calls to query your
+SQLite DB, so **stick to models tagged `tools`** on
+[ollama.com/library](https://ollama.com/library).
+
+#### Picking a model for your RAM
+
+Rough VRAM/unified-memory budget at the default Q4 quantization
+(≈ `params × 0.6 GB`, plus a few GB for context). If you're CPU-only,
+the same numbers apply to system RAM, but expect slower tokens/sec.
+
+| Your RAM    | Recommended tool-capable models (Ollama tag)                          |
+| ----------- | --------------------------------------------------------------------- |
+| 4–6 GB      | `qwen3:1.7b`, `qwen2.5:1.5b`, `granite4:1b`, `granite4:3b`            |
+| 8 GB        | `qwen3:4b`, `qwen2.5:3b`, `phi4-mini:3.8b`, `granite3.3:2b`           |
+| 12–16 GB    | `qwen3:8b` *(sweet spot)*, `qwen2.5:7b`, `qwen3.5:9b`, `granite3.3:8b`|
+| 24–32 GB    | `qwen3:14b`, `phi4:14b`, `qwen3.5:27b` (tight), `mistral-small:24b`   |
+| 48–64 GB    | `qwen3:30b` (MoE, fast), `gpt-oss:20b`, `qwen3:32b`, `qwen3.5:35b`    |
+| 96 GB+      | `qwen3:235b` (MoE), `gpt-oss:120b`, `qwen3.5:122b`                    |
+
+Notes:
+
+- **Qwen 3 / 3.5** (Alibaba) is the current go-to open family — strong tool
+  calling and ships in many sizes from 0.6B up to 235B MoE.
+- **Qwen3 30B MoE** only activates ~3B params per token, so it runs close to
+  7B speed while reasoning like a much larger model — great if you have the
+  RAM to hold the weights.
+- **Phi-4-mini / Phi-4** (Microsoft) are excellent at reasoning for their size.
+- **Granite 4** / **Granite 3.3** (IBM) are small, fast, and tool-tuned —
+  handy on 8 GB laptops.
+- **gpt-oss** (OpenAI open-weight) and **Mistral Small 3** are solid
+  mid-to-large options. Skip base **Gemma 3** for this app — it doesn't
+  expose tool calling; use **Gemma 4** if you want a Google model.
+- If a model behaves oddly with tools, drop one size tier or switch to a
+  `qwen3` tag.
 
 ### Cloud (opt-in)
 
