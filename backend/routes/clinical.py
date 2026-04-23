@@ -382,6 +382,23 @@ def get_note(note_id: str) -> dict:
     return row
 
 
+# --- Imaging ----------------------------------------------------------------
+# Imaging reports are promoted into notes_assembled with note_type='Imaging'
+# by the FHIR phase of ingest. This endpoint is just a focused projection so
+# the frontend can show a radiology-friendly list without the user scrolling
+# past every clinical note.
+
+@router.get("/imaging")
+def list_imaging(limit: int = 200) -> list[dict]:
+    return db.query(
+        "SELECT note_id, description, author, created, pat_enc_csn, "
+        "substr(full_text, 1, 280) AS preview "
+        "FROM notes_assembled WHERE note_type = 'Imaging' "
+        "ORDER BY created DESC LIMIT ?",
+        (limit,),
+    )
+
+
 # --- Messages ---------------------------------------------------------------
 
 @router.get("/messages")

@@ -9,6 +9,7 @@ import Medications from './pages/Medications';
 import Labs from './pages/Labs';
 import Vitals from './pages/Vitals';
 import Encounters from './pages/Encounters';
+import Imaging from './pages/Imaging';
 import Notes from './pages/Notes';
 import Messages from './pages/Messages';
 import Immunizations from './pages/Immunizations';
@@ -19,8 +20,8 @@ import Setup from './pages/Setup';
 
 type Page =
   | 'summary' | 'problems' | 'allergies' | 'medications' | 'labs' | 'vitals'
-  | 'encounters' | 'notes' | 'messages' | 'immunizations' | 'history'
-  | 'tables' | 'chat' | 'setup';
+  | 'encounters' | 'imaging' | 'notes' | 'messages' | 'immunizations'
+  | 'history' | 'tables' | 'chat' | 'setup';
 
 const nav: { key: Page; label: string; section?: string }[] = [
   { key: 'summary', label: 'Summary', section: 'Overview' },
@@ -33,6 +34,7 @@ const nav: { key: Page; label: string; section?: string }[] = [
   { key: 'immunizations', label: 'Immunizations' },
   { key: 'history', label: 'History' },
   { key: 'encounters', label: 'Encounters', section: 'Records' },
+  { key: 'imaging', label: 'Imaging' },
   { key: 'notes', label: 'Notes' },
   { key: 'messages', label: 'Messages' },
   { key: 'tables', label: 'Tables browser', section: 'Advanced' },
@@ -77,6 +79,7 @@ export default function App() {
       case 'labs': return <Labs />;
       case 'vitals': return <Vitals />;
       case 'encounters': return <Encounters />;
+      case 'imaging': return <Imaging />;
       case 'notes': return <Notes />;
       case 'messages': return <Messages />;
       case 'immunizations': return <Immunizations />;

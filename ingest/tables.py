@@ -46,6 +46,10 @@ CURATED_TABLES: list[str] = [
     "ORDER_RESULTS",
     "ORDER_RES_COMMENT",
     "ORDER_RES_COMP_CMT",
+    # Imaging / radiology narrative (free-text impressions and full reports)
+    "ORDER_IMPRESSION",
+    "ORDER_NARRATIVE",
+    "ORDER_RAD_READING",
     # Vitals / flowsheets
     "IP_FLWSHT_REC",
     "IP_FLWSHT_MEAS",

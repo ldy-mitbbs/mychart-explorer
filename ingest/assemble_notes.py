@@ -182,6 +182,13 @@ def assemble(conn: sqlite3.Connection, log=print) -> dict[str, int]:
     if enriched:
         stats["notes_enriched_from_fhir"] = enriched
 
+    # Imaging reports live in FHIR as Observations (Narrative/Impression
+    # valueString) or DiagnosticReport.presentedForm Binaries — neither flows
+    # through HNO_INFO, so promote them into notes_assembled directly.
+    imaging = _enrich_notes_from_fhir_imaging(conn, log=log)
+    if imaging:
+        stats["imaging_notes_from_fhir"] = imaging
+
     # --- MyChart messages ---
     cur.executescript(
         """
@@ -421,3 +428,212 @@ def _enrich_notes_from_fhir(conn: sqlite3.Connection, log=print) -> int:
     total = len(updates) + len(inserts)
     log(f"  enriched {len(updates)} notes + inserted {len(inserts)} from FHIR")
     return total
+
+
+_IMAGING_CATEGORY_VALUES = {"imaging", "radiology"}
+# Section ordering used when assembling the body of an imaging note. Anything
+# not listed here is appended after these in arbitrary order.
+_IMAGING_SECTION_ORDER = ("Narrative", "Findings", "Impression", "Report")
+
+
+def _is_imaging_resource(res: dict) -> bool:
+    for c in res.get("category") or []:
+        if (c.get("text") or "").strip().lower() in _IMAGING_CATEGORY_VALUES:
+            return True
+        for cc in c.get("coding") or []:
+            if (cc.get("code") or "").strip().lower() in _IMAGING_CATEGORY_VALUES:
+                return True
+    return False
+
+
+def _service_request_ref(res: dict) -> tuple[str, str]:
+    """Return (reference, display) of the first ServiceRequest in basedOn."""
+    for b in res.get("basedOn") or []:
+        ref = b.get("reference") or ""
+        if ref.startswith("ServiceRequest/"):
+            return ref, (b.get("display") or "")
+    return "", ""
+
+
+def _first_performer(res: dict) -> str:
+    for p in res.get("performer") or []:
+        if p.get("display"):
+            return p["display"]
+    return ""
+
+
+def _encounter_csn(res: dict) -> str:
+    enc = res.get("encounter") or {}
+    return (enc.get("identifier") or {}).get("value") or ""
+
+
+def _compose_imaging_body(sections: dict[str, str]) -> str:
+    """Stitch sections into a single body in a stable order."""
+    parts: list[str] = []
+    seen: set[str] = set()
+    for code in _IMAGING_SECTION_ORDER:
+        if code in sections and sections[code].strip():
+            parts.append(f"{code.upper()}:\n{sections[code].strip()}")
+            seen.add(code)
+    for code, text in sections.items():
+        if code in seen or not text.strip():
+            continue
+        parts.append(f"{code.upper()}:\n{text.strip()}")
+    return "\n\n".join(parts).strip()
+
+
+def _enrich_notes_from_fhir_imaging(conn: sqlite3.Connection, log=print) -> int:
+    """Promote FHIR imaging Observations / DiagnosticReports into notes_assembled.
+
+    Imaging Observations (`category=Imaging`) carry the narrative + impression
+    in `valueString`, but live only in the opaque `fhir_resources` JSON blob —
+    invisible to `search_notes`. Group sibling Observations that share a
+    ServiceRequest into a single note so a search hit returns the whole
+    radiology read. Fall back to DiagnosticReport.presentedForm Binaries for
+    studies that have a report but no Observation valueStrings.
+    """
+    if not _table_exists(conn, "fhir_resources"):
+        return 0
+
+    cur = conn.cursor()
+    binaries: dict[str, tuple[str, str]] = {}
+    if _table_exists(conn, "fhir_binaries"):
+        binaries = {
+            r[0]: (r[1] or "", r[2] or "")
+            for r in cur.execute("SELECT id, content_type, text FROM fhir_binaries")
+        }
+
+    # group_key -> {description, created, author, csn, sections, source}
+    groups: dict[str, dict] = {}
+
+    obs_rows = cur.execute(
+        "SELECT json FROM fhir_resources WHERE resource_type='Observation'"
+    ).fetchall()
+    for (raw,) in obs_rows:
+        try:
+            obs = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if not _is_imaging_resource(obs):
+            continue
+        val = obs.get("valueString") or ""
+        if not val.strip():
+            continue
+        code = (obs.get("code") or {}).get("text") or "Section"
+        sr_ref, sr_disp = _service_request_ref(obs)
+        eff = obs.get("effectiveDateTime") or ""
+        # Group key: prefer ServiceRequest; fall back to encounter+date so
+        # orphan observations still cluster instead of becoming N tiny notes.
+        if sr_ref:
+            key = sr_ref
+        else:
+            enc_ref = (obs.get("encounter") or {}).get("reference") or ""
+            key = f"orphan|{enc_ref}|{eff[:10]}"
+
+        g = groups.setdefault(key, {
+            "description": sr_disp,
+            "created": eff,
+            "author": _first_performer(obs),
+            "csn": _encounter_csn(obs),
+            "sections": {},
+            "source": "observation",
+        })
+        if sr_disp and not g["description"]:
+            g["description"] = sr_disp
+        # Earliest effective time wins as the note's "created" timestamp.
+        if eff and (not g["created"] or eff < g["created"]):
+            g["created"] = eff
+        if not g["author"]:
+            g["author"] = _first_performer(obs)
+        if not g["csn"]:
+            g["csn"] = _encounter_csn(obs)
+        # Multiple Observations sharing a code (rare) get concatenated.
+        if code in g["sections"]:
+            g["sections"][code] += "\n\n" + val
+        else:
+            g["sections"][code] = val
+
+    # DiagnosticReport.presentedForm: only use when no Observation already
+    # populated the same ServiceRequest group, otherwise we'd index the same
+    # narrative twice.
+    dr_rows = cur.execute(
+        "SELECT json FROM fhir_resources WHERE resource_type='DiagnosticReport'"
+    ).fetchall()
+    for (raw,) in dr_rows:
+        try:
+            dr = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        if not _is_imaging_resource(dr):
+            continue
+        forms = dr.get("presentedForm") or []
+        if not forms:
+            continue
+        sr_ref, sr_disp = _service_request_ref(dr)
+        key = sr_ref or f"DiagnosticReport/{dr.get('id','')}"
+        if key in groups:
+            continue  # Observation path already captured this study.
+
+        text_parts: list[str] = []
+        for f in forms:
+            url = f.get("url") or ""
+            if not url.startswith("Binary/"):
+                continue
+            bin_id = url.split("/", 1)[1]
+            ct_b, txt = binaries.get(bin_id, ("", ""))
+            if not txt:
+                continue
+            ct = (f.get("contentType") or ct_b or "").lower()
+            if "html" in ct:
+                plain = _html_to_text(txt)
+            elif "rtf" in ct:
+                plain = _rtf_to_text(txt)
+            else:
+                plain = txt
+            if plain.strip():
+                text_parts.append(plain.strip())
+        if not text_parts:
+            continue
+
+        groups[key] = {
+            "description": sr_disp or (dr.get("code") or {}).get("text") or "",
+            "created": dr.get("effectiveDateTime") or "",
+            "author": _first_performer(dr),
+            "csn": _encounter_csn(dr),
+            "sections": {"Report": "\n\n".join(text_parts)},
+            "source": "diagnostic_report",
+        }
+
+    inserts: list[tuple] = []
+    for key, g in groups.items():
+        body = _compose_imaging_body(g["sections"])
+        if not body:
+            continue
+        # Stable, transparent synthetic NOTE_ID: lets the LLM cite as
+        # [note:fhir-img-...] and lets get_note round-trip via notes_assembled.
+        if key.startswith("ServiceRequest/"):
+            nid = "fhir-img-" + key.split("/", 1)[1]
+        elif key.startswith("DiagnosticReport/"):
+            nid = "fhir-img-dr-" + key.split("/", 1)[1]
+        else:
+            nid = "fhir-img-orphan-" + key.replace("|", "_").replace("/", "_")[:40]
+        inserts.append((
+            nid,
+            g["csn"] or None,
+            "Imaging",
+            g["author"] or None,
+            g["created"] or None,
+            g["description"] or "Imaging report",
+            body,
+        ))
+
+    if inserts:
+        cur.executemany(
+            "INSERT OR IGNORE INTO notes_assembled "
+            "(note_id, pat_enc_csn, note_type, author, created, description, full_text) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            inserts,
+        )
+        conn.commit()
+        log(f"  promoted {len(inserts)} imaging reports from FHIR into notes_assembled")
+    return len(inserts)
