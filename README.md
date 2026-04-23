@@ -98,7 +98,7 @@ python -m ingest --source "/path/to/your/Epic Export" --db data/mychart.db
 ```sh
 brew install ollama           # or see ollama.com for your platform
 ollama serve &
-ollama pull qwen3:8b          # see the size guide below
+ollama pull qwen3.5:27b       # default; see the size guide below for alternatives
 ```
 
 In the app's **Ask AI** tab → *Settings*, pick a model from the dropdown
