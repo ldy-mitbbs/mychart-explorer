@@ -321,7 +321,7 @@ def make_provider(settings: dict) -> LLMProvider:
     name = settings.get("llm_provider", "ollama")
     if name == "ollama":
         return OllamaProvider(
-            model=settings.get("ollama_model", "qwen3.5:27b"),
+            model=settings.get("ollama_model", "qwen3.5:latest"),
             base_url=settings.get("ollama_url", "http://localhost:11434"),
         )
     if name == "openai":

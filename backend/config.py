@@ -23,7 +23,7 @@ SETTINGS_PATH = DATA_DIR / "settings.json"
 
 _DEFAULT_SETTINGS = {
     "llm_provider": "ollama",  # ollama | openai | anthropic
-    "ollama_model": "qwen3.5:27b",
+    "ollama_model": "qwen3.5:latest",
     "ollama_url": "http://localhost:11434",
     "openai_model": "gpt-4o-mini",
     "anthropic_model": "claude-3-5-sonnet-latest",
