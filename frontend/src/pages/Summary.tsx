@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api';
 import { ageFromDob } from '../age';
+import { toDisplay, prettyName } from '../vitals_format';
 
 export default function Summary() {
   const [data, setData] = useState<any>(null);
@@ -103,7 +104,7 @@ export default function Summary() {
             'Weight', 'Height', 'BMI',
           ];
           const score = (name: string) => {
-            const n = (name || '').toLowerCase();
+            const n = prettyName(name || '').toLowerCase();
             const idx = priority.findIndex((k) => n.includes(k.toLowerCase()));
             return idx === -1 ? 999 : idx;
           };
@@ -115,13 +116,16 @@ export default function Summary() {
             <table className="dtable">
               <thead><tr><th>Measurement</th><th>Value</th><th>Recorded</th></tr></thead>
               <tbody>
-                {rows.map((v: any, i: number) => (
-                  <tr key={i}>
-                    <td>{v.name}</td>
-                    <td className="mono">{v.value}{v.unit ? ` ${v.unit}` : ''}</td>
-                    <td className="mono small">{(v.time || '').slice(0, 16).replace('T', ' ')}</td>
-                  </tr>
-                ))}
+                {rows.map((v: any, i: number) => {
+                  const d = toDisplay(v.value, v.unit);
+                  return (
+                    <tr key={i} title={v.name}>
+                      <td>{prettyName(v.name)}</td>
+                      <td className="mono">{d.value}{d.unit ? ` ${d.unit}` : ''}</td>
+                      <td className="mono small">{(v.time || '').slice(0, 16).replace('T', ' ')}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           );

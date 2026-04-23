@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api';
+import { isOunces, toDisplay, prettyName } from '../vitals_format';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from 'recharts';
@@ -21,12 +22,22 @@ export default function Vitals() {
 
   const visible = useMemo(() => {
     const f = filter.toLowerCase();
-    return meas.filter((m) => (m.name || '').toLowerCase().includes(f)).sort((a, b) => b.n - a.n);
+    return meas
+      .filter((m) => {
+        const raw = (m.name || '').toLowerCase();
+        const pretty = prettyName(m.name || '').toLowerCase();
+        return raw.includes(f) || pretty.includes(f);
+      })
+      .sort((a, b) => b.n - a.n);
   }, [meas, filter]);
 
   const chart = series
-    .map((p) => ({ time: (p.time || '').slice(0, 10), value: parseFloat(p.value) }))
+    .map((p) => {
+      const d = toDisplay(p.value, p.unit);
+      return { time: (p.time || '').slice(0, 10), value: parseFloat(d.value) };
+    })
     .filter((p) => !isNaN(p.value));
+
 
   return (
     <>
@@ -43,13 +54,14 @@ export default function Vitals() {
           {visible.map((c) => (
             <div key={c.name}
               onClick={() => setSelected(c.name)}
+              title={c.name}
               style={{
                 padding: '6px 8px', cursor: 'pointer', borderRadius: 4,
                 background: selected === c.name ? 'var(--panel-2)' : 'transparent',
                 fontSize: 12,
               }}>
-              <div>{c.name}</div>
-              <div className="muted small">n={c.n}{c.unit ? ` · ${c.unit}` : ''}</div>
+              <div>{prettyName(c.name)}</div>
+              <div className="muted small">n={c.n}{c.unit ? ` · ${isOunces(c.unit) ? 'lb' : c.unit}` : ''}</div>
             </div>
           ))}
         </div>
@@ -59,7 +71,7 @@ export default function Vitals() {
           {selected && (
             <>
               <div className="card">
-                <h2 style={{ marginTop: 0, border: 0 }}>{selected}</h2>
+                <h2 style={{ marginTop: 0, border: 0 }} title={selected}>{prettyName(selected)}</h2>
                 {chart.length > 0 ? (
                   <div style={{ width: '100%', height: 260 }}>
                     <ResponsiveContainer>
@@ -80,14 +92,17 @@ export default function Vitals() {
                 <table className="dtable">
                   <thead><tr><th>Time</th><th>Value</th><th>Unit</th><th>Type</th></tr></thead>
                   <tbody>
-                    {series.map((p, i) => (
-                      <tr key={i}>
-                        <td className="mono small">{p.time}</td>
-                        <td className="mono">{p.value}</td>
-                        <td className="small">{p.unit}</td>
-                        <td className="small muted">{p.value_type}</td>
-                      </tr>
-                    ))}
+                    {series.map((p, i) => {
+                      const d = toDisplay(p.value, p.unit);
+                      return (
+                        <tr key={i}>
+                          <td className="mono small">{p.time}</td>
+                          <td className="mono">{d.value}</td>
+                          <td className="small">{d.unit}</td>
+                          <td className="small muted">{p.value_type}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
