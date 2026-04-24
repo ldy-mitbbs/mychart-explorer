@@ -61,7 +61,10 @@ mychart-explorer/
 
 ## Prerequisites
 
-- **Python** 3.11+
+- **Python** 3.11+ (the backend uses PEP 604 `X | None` union syntax, which requires 3.10+; 3.11+ is recommended). macOS still ships Python 3.9 as `python3`, so check with `python3 --version` first. If you need a newer one:
+  - **macOS** (Homebrew): `brew install python@3.12`, then use `python3.12` below.
+  - **Ubuntu/Debian**: `sudo apt install python3.12 python3.12-venv`.
+  - **Windows**: install from [python.org](https://www.python.org/downloads/) and use `py -3.12`.
 - **Node.js** 18+
 - **Your Epic MyChart export** — request it from your patient portal. Unzip
   it somewhere convenient; the folder should contain `EHITables/` (TSVs),
@@ -74,9 +77,11 @@ mychart-explorer/
 git clone https://github.com/ldy-mitbbs/mychart-explorer.git
 cd mychart-explorer
 
-# 1. Python env + deps
-python3 -m venv .venv
+# 1. Python env + deps — make sure the interpreter is 3.11+.
+#    Replace `python3.12` with whichever 3.11+ binary you installed.
+python3.12 -m venv .venv
 source .venv/bin/activate
+python -V   # should print 3.11 or newer
 pip install -r requirements.txt
 
 # 2. Start the backend (in one terminal)

@@ -12,9 +12,44 @@ interface Msg {
   tool_call_id?: string;
   name?: string;
   tool_events?: ToolCallEvent[];
+  reasoning?: string;
 }
 
 interface ToolCallEvent { id: string; name: string; arguments: any; result?: string; }
+
+function ThinkingView({ text, streaming }: { text: string; streaming: boolean }) {
+  const { t } = useT();
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (streaming && bodyRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
+    }
+  }, [text, streaming]);
+  return (
+    <details className="thinking" open={streaming}>
+      <summary className="small muted">
+        {streaming ? t('chat.thinking.live') : t('chat.thinking.done', { n: text.length })}
+      </summary>
+      <div
+        ref={bodyRef}
+        className="thinking-body small muted"
+        style={{
+          whiteSpace: 'pre-wrap',
+          maxHeight: 200,
+          overflowY: 'auto',
+          padding: '6px 10px',
+          marginTop: 4,
+          borderLeft: '2px solid var(--border, #2a2a2a)',
+          fontFamily: 'ui-monospace, monospace',
+          fontSize: 12,
+          lineHeight: 1.45,
+        }}
+      >
+        {text}
+      </div>
+    </details>
+  );
+}
 
 function ToolCallView({ tc }: { tc: ToolCallEvent }) {
   const { t } = useT();
@@ -25,7 +60,20 @@ function ToolCallView({ tc }: { tc: ToolCallEvent }) {
       {tc.result !== undefined && (
         <details>
           <summary>{t('chat.toolResult', { n: tc.result.length })}</summary>
-          <pre>{tc.result.slice(0, 2000)}</pre>
+          <pre
+            style={{
+              maxHeight: 200,
+              overflow: 'auto',
+              margin: '4px 0 0 0',
+              padding: '6px 10px',
+              fontSize: 12,
+              lineHeight: 1.45,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            {tc.result.slice(0, 2000)}
+          </pre>
         </details>
       )}
     </div>
@@ -206,6 +254,7 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
   const [input, setInput] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [streamText, setStreamText] = useState('');
+  const [streamReasoning, setStreamReasoning] = useState('');
   const [streamTools, setStreamTools] = useState<ToolCallEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings>({});
@@ -227,7 +276,7 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
   }
 
   useEffect(() => { api<Settings>('/api/settings').then(setSettings); }, []);
-  useEffect(() => { msgsRef.current?.scrollTo(0, msgsRef.current.scrollHeight); }, [messages, streamText, streamTools]);
+  useEffect(() => { msgsRef.current?.scrollTo(0, msgsRef.current.scrollHeight); }, [messages, streamText, streamTools, streamReasoning]);
 
   useEffect(() => {
     if (conversationId) {
@@ -324,9 +373,11 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
     setInput('');
     setStreaming(true);
     setStreamText('');
+    setStreamReasoning('');
     setStreamTools([]);
 
     let assistantText = '';
+    let assistantReasoning = '';
     const toolEvents: ToolCallEvent[] = [];
     let cid: string | null = null;
 
@@ -361,6 +412,9 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
           if (evt.type === 'text') {
             assistantText += evt.text;
             setStreamText(assistantText);
+          } else if (evt.type === 'reasoning') {
+            assistantReasoning += evt.text;
+            setStreamReasoning(assistantReasoning);
           } else if (evt.type === 'tool_call') {
             toolEvents.push({ id: evt.id, name: evt.name, arguments: evt.arguments });
             setStreamTools([...toolEvents]);
@@ -380,10 +434,16 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
 
     setMessages((m) => [
       ...m,
-      { role: 'assistant', content: assistantText, tool_events: toolEvents },
+      {
+        role: 'assistant',
+        content: assistantText,
+        tool_events: toolEvents,
+        reasoning: assistantReasoning || undefined,
+      },
     ]);
     setStreaming(false);
     setStreamText('');
+    setStreamReasoning('');
     setStreamTools([]);
     if (cid) refreshConversations();
   }
@@ -700,6 +760,7 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
 
         {messages.map((m, i) => (
           <div key={i} className={`msg ${m.role}`}>
+            {m.reasoning && <ThinkingView text={m.reasoning} streaming={false} />}
             {m.tool_events?.map((tc) => <ToolCallView key={tc.id} tc={tc} />)}
             {m.content && (
               m.role === 'assistant'
@@ -709,8 +770,9 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
           </div>
         ))}
 
-        {streaming && (streamText || streamTools.length > 0) && (
+        {streaming && (streamText || streamTools.length > 0 || streamReasoning) && (
           <div className="msg assistant">
+            {streamReasoning && <ThinkingView text={streamReasoning} streaming={true} />}
             {streamTools.map((tc) => <ToolCallView key={tc.id} tc={tc} />)}
             {streamText && <MarkdownBubble text={streamText} />}
           </div>

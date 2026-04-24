@@ -289,6 +289,8 @@ const en = {
   'chat.copy': 'copy',
   'chat.copied': 'copied',
   'chat.copyHint': 'Run this in Terminal (macOS) or PowerShell (Windows)',
+  'chat.thinking.live': 'Thinking…',
+  'chat.thinking.done': 'Thoughts ({{n}} chars)',
 };
 
 export default en;

@@ -109,6 +109,9 @@ class OllamaProvider:
                     except json.JSONDecodeError:
                         continue
                     msg = chunk.get("message") or {}
+                    thinking = msg.get("thinking") or ""
+                    if thinking:
+                        yield {"type": "reasoning", "text": thinking}
                     content = msg.get("content") or ""
                     if content:
                         yield {"type": "text", "text": content}
@@ -168,7 +171,12 @@ class OpenAIProvider:
         async with httpx.AsyncClient(timeout=None) as client:
             async with client.stream("POST", url, json=payload,
                                      headers=headers) as resp:
-                resp.raise_for_status()
+                if resp.status_code >= 400:
+                    body = (await resp.aread()).decode("utf-8", "replace")
+                    raise RuntimeError(
+                        f"{self.name} {resp.status_code} at {url}: "
+                        f"model={self.model!r}: {body[:800]}"
+                    )
                 async for line in resp.aiter_lines():
                     if not line or not line.startswith("data: "):
                         continue
@@ -180,6 +188,15 @@ class OpenAIProvider:
                     except json.JSONDecodeError:
                         continue
                     delta = (evt.get("choices") or [{}])[0].get("delta") or {}
+                    # Reasoning models (DeepSeek R1, OpenRouter passthrough,
+                    # some OpenAI o-series) surface chain-of-thought via one
+                    # of these fields. Names vary by provider/model.
+                    reasoning = (
+                        delta.get("reasoning")
+                        or delta.get("reasoning_content")
+                    )
+                    if reasoning:
+                        yield {"type": "reasoning", "text": reasoning}
                     if delta.get("content"):
                         yield {"type": "text", "text": delta["content"]}
                     for tc in delta.get("tool_calls") or []:
@@ -305,7 +322,12 @@ class AnthropicProvider:
         async with httpx.AsyncClient(timeout=None) as client:
             async with client.stream("POST", url, json=payload,
                                      headers=headers) as resp:
-                resp.raise_for_status()
+                if resp.status_code >= 400:
+                    body = (await resp.aread()).decode("utf-8", "replace")
+                    raise RuntimeError(
+                        f"anthropic {resp.status_code}: "
+                        f"model={self.model!r}: {body[:800]}"
+                    )
                 current_tool: dict | None = None
                 async for line in resp.aiter_lines():
                     if not line or not line.startswith("data: "):
@@ -325,6 +347,9 @@ class AnthropicProvider:
                         delta = evt.get("delta") or {}
                         if delta.get("type") == "text_delta":
                             yield {"type": "text", "text": delta.get("text", "")}
+                        elif delta.get("type") == "thinking_delta":
+                            yield {"type": "reasoning",
+                                   "text": delta.get("thinking", "")}
                         elif delta.get("type") == "input_json_delta" \
                                 and current_tool is not None:
                             current_tool["args_str"] += delta.get("partial_json", "")

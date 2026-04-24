@@ -291,6 +291,8 @@ const zh: Dict = {
   'chat.copy': '复制',
   'chat.copied': '已复制',
   'chat.copyHint': '在终端 (macOS) 或 PowerShell (Windows) 中运行',
+  'chat.thinking.live': '思考中…',
+  'chat.thinking.done': '思考过程 ({{n}} 字符)',
 };
 
 export default zh;

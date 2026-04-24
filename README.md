@@ -45,7 +45,10 @@ mychart-explorer/
 
 ## Prerequisites
 
-- **Python** 3.11+
+- **Python** 3.11+（后端使用 PEP 604 的 `X | None` 联合类型语法，至少需要 3.10，推荐 3.11+）。macOS 自带的 `python3` 仍然是 3.9，请先用 `python3 --version` 确认版本。如需安装新版本：
+  - **macOS**（Homebrew）：`brew install python@3.12`，随后使用 `python3.12`。
+  - **Ubuntu/Debian**：`sudo apt install python3.12 python3.12-venv`。
+  - **Windows**：从 [python.org](https://www.python.org/downloads/) 下载安装，使用 `py -3.12`。
 - **Node.js** 18+
 - **你的 Epic MyChart 导出数据**：可通过 patient portal 申请。解压到一个方便的位置后，目录中应包含 `EHITables/`（TSV 文件）、`EHITables Schema/`（HTML 数据字典）和 `FHIR/`（NDJSON 文件）。
 - **可选：[Ollama](https://ollama.com)**，用于本地 LLM 聊天。
@@ -56,9 +59,11 @@ mychart-explorer/
 git clone https://github.com/ldy-mitbbs/mychart-explorer.git
 cd mychart-explorer
 
-# 1. Python 虚拟环境与依赖
-python3 -m venv .venv
+# 1. Python 虚拟环境与依赖 —— 请确保解释器版本 >= 3.11。
+#    如果你安装的是别的版本，把 `python3.12` 换成对应的可执行文件。
+python3.12 -m venv .venv
 source .venv/bin/activate
+python -V   # 应当显示 3.11 或更高
 pip install -r requirements.txt
 
 # 2. 启动后端（一个终端）

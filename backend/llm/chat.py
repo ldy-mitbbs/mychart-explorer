@@ -163,17 +163,31 @@ async def _run_chat(req: ChatRequest) -> AsyncIterator[bytes]:
     for _turn in range(max_turns):
         pending_tool_calls: list[dict] = []
         assistant_text_parts: list[str] = []
+        think_splitter = _ThinkSplitter()
 
         try:
             async for evt in provider.chat_stream(messages, tools):
                 if evt["type"] == "text":
-                    assistant_text_parts.append(evt["text"])
+                    # Peel inline <think>...</think> tags out of the content
+                    # stream (qwen3, deepseek-r1 via ollama, etc.) and re-emit
+                    # them as reasoning events so the UI can show them in a
+                    # separate pane without polluting the answer.
+                    for sub in think_splitter.feed(evt["text"]):
+                        if sub["type"] == "text":
+                            assistant_text_parts.append(sub["text"])
+                        yield _sse(sub)
+                elif evt["type"] == "reasoning":
                     yield _sse(evt)
                 elif evt["type"] == "tool_call":
                     pending_tool_calls.append(evt)
                     yield _sse(evt)
                 elif evt["type"] == "done":
                     break
+            # Flush any buffered text from the splitter.
+            for sub in think_splitter.flush():
+                if sub["type"] == "text":
+                    assistant_text_parts.append(sub["text"])
+                yield _sse(sub)
         except Exception as e:
             yield _sse({"type": "error", "message": str(e)})
             if persist and new_messages:
@@ -232,6 +246,65 @@ async def _run_chat(req: ChatRequest) -> AsyncIterator[bytes]:
 
 def _sse(obj: dict) -> bytes:
     return ("data: " + json.dumps(obj) + "\n\n").encode("utf-8")
+
+
+class _ThinkSplitter:
+    """Streaming splitter that separates ``<think>…</think>`` blocks from
+    regular assistant text and re-emits each side as distinct events.
+
+    Handles tags that arrive split across chunks by buffering a small tail.
+    """
+
+    OPEN = "<think>"
+    CLOSE = "</think>"
+
+    def __init__(self) -> None:
+        self._in_think = False
+        self._buf = ""
+
+    def feed(self, chunk: str) -> list[dict]:
+        self._buf += chunk
+        out: list[dict] = []
+        while self._buf:
+            if self._in_think:
+                idx = self._buf.find(self.CLOSE)
+                if idx < 0:
+                    # Might contain a partial closer at the tail — hold back
+                    # len(CLOSE)-1 chars so we can detect it next chunk.
+                    keep = len(self.CLOSE) - 1
+                    if len(self._buf) > keep:
+                        emit = self._buf[:-keep]
+                        self._buf = self._buf[-keep:]
+                        if emit:
+                            out.append({"type": "reasoning", "text": emit})
+                    return out
+                if idx > 0:
+                    out.append({"type": "reasoning", "text": self._buf[:idx]})
+                self._buf = self._buf[idx + len(self.CLOSE):]
+                self._in_think = False
+            else:
+                idx = self._buf.find(self.OPEN)
+                if idx < 0:
+                    keep = len(self.OPEN) - 1
+                    if len(self._buf) > keep:
+                        emit = self._buf[:-keep]
+                        self._buf = self._buf[-keep:]
+                        if emit:
+                            out.append({"type": "text", "text": emit})
+                    return out
+                if idx > 0:
+                    out.append({"type": "text", "text": self._buf[:idx]})
+                self._buf = self._buf[idx + len(self.OPEN):]
+                self._in_think = True
+        return out
+
+    def flush(self) -> list[dict]:
+        if not self._buf:
+            return []
+        evt_type = "reasoning" if self._in_think else "text"
+        out = [{"type": evt_type, "text": self._buf}]
+        self._buf = ""
+        return out
 
 
 @router.post("/chat")
