@@ -811,7 +811,15 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+          onKeyDown={(e) => {
+            // Don't send while an IME composition is in progress (e.g. Chinese
+            // input method committing an English word with Enter). nativeEvent
+            // check covers Safari, which doesn't always set e.isComposing.
+            if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+              e.preventDefault();
+              send();
+            }
+          }}
           placeholder={t('chat.composer.placeholder')}
         />
         <button className="primary" onClick={send} disabled={streaming || !input.trim()}>
