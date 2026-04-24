@@ -76,6 +76,13 @@ npm run dev
 # 浏览器打开 http://localhost:5173
 ```
 
+### 一键启动（可选）
+
+两种方式可以避免每次都开两个终端：
+
+- **VS Code 用户**：直接按 `Cmd+Shift+B`（或 *Tasks: Run Task → Dev: backend + frontend*），仓库内的 [.vscode/tasks.json](.vscode/tasks.json) 会同时启动 backend 与 frontend，每个进程一个独立的终端面板。
+- **命令行用户**：在仓库根目录运行 `./dev.sh`，脚本会自动激活 `.venv`、按需 `npm install`，并把两个进程并排跑起来；按一次 `Ctrl+C` 即可同时关闭。
+
 首次启动时，应用会自动跳转到 **Setup page**。将 Epic 导出目录的绝对路径粘贴进去，依次点击 *Validate*、*Save* 和 *Start ingest*，随后就可以在界面中实时看到 ingest progress。
 
 ### CLI alternative

@@ -1,0 +1,65 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Backend: uvicorn",
+      "type": "shell",
+      "command": "${workspaceFolder}/.venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8765",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "presentation": {
+        "panel": "dedicated",
+        "group": "mychart-explorer",
+        "reveal": "always"
+      },
+      "problemMatcher": {
+        "owner": "uvicorn",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Started server process|Will watch for changes",
+          "endsPattern": "Application startup complete|Uvicorn running on"
+        }
+      }
+    },
+    {
+      "label": "Frontend: vite",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/frontend"
+      },
+      "isBackground": true,
+      "presentation": {
+        "panel": "dedicated",
+        "group": "mychart-explorer",
+        "reveal": "always"
+      },
+      "problemMatcher": {
+        "owner": "vite",
+        "pattern": {
+          "regexp": "^$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "VITE",
+          "endsPattern": "ready in|Local:"
+        }
+      }
+    },
+    {
+      "label": "Dev: backend + frontend",
+      "dependsOn": ["Backend: uvicorn", "Frontend: vite"],
+      "dependsOrder": "parallel",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": []
+    }
+  ]
+}

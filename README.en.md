@@ -94,6 +94,13 @@ npm run dev
 # open http://localhost:5173
 ```
 
+### One-shot launch (optional)
+
+Two ways to skip the two-terminal dance:
+
+- **In VS Code**: press `Cmd+Shift+B` (or *Tasks: Run Task → Dev: backend + frontend*). The committed [.vscode/tasks.json](.vscode/tasks.json) starts the backend and frontend in parallel, each in its own dedicated terminal panel.
+- **From a shell**: run `./dev.sh` from the repo root. It activates `.venv`, runs `npm install` if needed, and launches both processes side by side; one `Ctrl+C` shuts them both down.
+
 On first launch the app will route you to the **Setup** page. Paste the
 absolute path to your Epic export, click *Validate*, then *Save*, then
 *Start ingest*. Progress streams to the UI.
