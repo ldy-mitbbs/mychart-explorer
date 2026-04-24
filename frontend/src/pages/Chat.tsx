@@ -104,9 +104,12 @@ interface Settings {
   ollama_url?: string;
   openai_model?: string;
   anthropic_model?: string;
+  openrouter_model?: string;
+  openrouter_url?: string;
   max_tool_turns?: number;
   has_openai_key?: boolean;
   has_anthropic_key?: boolean;
+  has_openrouter_key?: boolean;
 }
 
 interface Conversation {
@@ -432,6 +435,7 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
             {settings.llm_provider === 'ollama' && settings.ollama_model && ` · ${settings.ollama_model}`}
             {settings.llm_provider === 'openai' && settings.openai_model && ` · ${settings.openai_model}`}
             {settings.llm_provider === 'anthropic' && settings.anthropic_model && ` · ${settings.anthropic_model}`}
+            {settings.llm_provider === 'openrouter' && settings.openrouter_model && ` · ${settings.openrouter_model}`}
           </div>
         </div>
         <div className="row">
@@ -500,6 +504,7 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
                 <option value="ollama">{t('chat.provider.ollama')}</option>
                 <option value="openai">{t('chat.provider.openai')}</option>
                 <option value="anthropic">{t('chat.provider.anthropic')}</option>
+                <option value="openrouter">{t('chat.provider.openrouter')}</option>
               </select>
             </label>
             {settings.llm_provider === 'ollama' && (
@@ -634,6 +639,33 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
                     : t('chat.apiKey.missing', { envvar: 'ANTHROPIC_API_KEY' })}
                 </span>
               </label>
+            )}
+            {settings.llm_provider === 'openrouter' && (
+              <>
+                <label>{t('chat.model')}
+                  <input
+                    value={settings.openrouter_model || ''}
+                    onChange={(e) => setSettings({ ...settings, openrouter_model: e.target.value })}
+                    onBlur={() => saveSettings({ openrouter_model: settings.openrouter_model })}
+                    style={{ marginLeft: 6, width: 280 }}
+                    placeholder="e.g. anthropic/claude-3.5-sonnet"
+                  />
+                  <span className="small muted" style={{ marginLeft: 8 }}>
+                    {t('chat.apiKeyLabel')} {settings.has_openrouter_key
+                      ? t('chat.apiKey.set', { envvar: 'OPENROUTER_API_KEY' })
+                      : t('chat.apiKey.missing', { envvar: 'OPENROUTER_API_KEY' })}
+                  </span>
+                </label>
+                <label>{t('chat.url')}
+                  <input
+                    value={settings.openrouter_url || ''}
+                    onChange={(e) => setSettings({ ...settings, openrouter_url: e.target.value })}
+                    onBlur={() => saveSettings({ openrouter_url: settings.openrouter_url || '' })}
+                    style={{ marginLeft: 6, width: 280 }}
+                    placeholder="https://openrouter.ai/api/v1"
+                  />
+                </label>
+              </>
             )}
             <label>{t('chat.maxTurns')}
               <input

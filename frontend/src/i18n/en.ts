@@ -258,6 +258,7 @@ const en = {
   'chat.provider.ollama': 'ollama (local)',
   'chat.provider.openai': 'openai (cloud)',
   'chat.provider.anthropic': 'anthropic (cloud)',
+  'chat.provider.openrouter': 'openrouter (cloud)',
   'chat.model': 'Model',
   'chat.url': 'URL',
   'chat.customModel': 'Custom…',

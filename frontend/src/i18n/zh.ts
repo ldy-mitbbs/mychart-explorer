@@ -260,6 +260,7 @@ const zh: Dict = {
   'chat.provider.ollama': 'ollama (本地)',
   'chat.provider.openai': 'openai (云端)',
   'chat.provider.anthropic': 'anthropic (云端)',
+  'chat.provider.openrouter': 'openrouter (云端)',
   'chat.model': '模型',
   'chat.url': '地址',
   'chat.customModel': '自定义…',

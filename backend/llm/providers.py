@@ -135,15 +135,21 @@ class OllamaProvider:
 
 class OpenAIProvider:
     name = "openai"
+    base_url = "https://api.openai.com/v1"
+    env_key = "OPENAI_API_KEY"
+    extra_headers: dict[str, str] = {}
 
-    def __init__(self, model: str, api_key: str | None = None):
+    def __init__(self, model: str, api_key: str | None = None,
+                 base_url: str | None = None):
         self.model = model
-        self.api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        self.api_key = api_key or os.environ.get(self.env_key)
         if not self.api_key:
-            raise RuntimeError("OPENAI_API_KEY not set")
+            raise RuntimeError(f"{self.env_key} not set")
+        if base_url:
+            self.base_url = base_url.rstrip("/")
 
     async def chat_stream(self, messages, tools):
-        url = "https://api.openai.com/v1/chat/completions"
+        url = f"{self.base_url}/chat/completions"
         payload = {
             "model": self.model,
             "messages": messages,
@@ -155,6 +161,7 @@ class OpenAIProvider:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
+            **self.extra_headers,
         }
 
         tool_accum: dict[int, dict] = {}  # index -> {"id","name","args_str"}
@@ -195,6 +202,27 @@ class OpenAIProvider:
             yield {"type": "tool_call", "id": slot["id"] or "tc",
                    "name": slot["name"], "arguments": args}
         yield {"type": "done"}
+
+
+# --- OpenRouter (OpenAI-compatible) ----------------------------------------
+
+class OpenRouterProvider(OpenAIProvider):
+    """OpenRouter uses the OpenAI chat-completions wire format, so we reuse
+    :class:`OpenAIProvider` and only override endpoint / key / headers.
+
+    The ``model`` field is a fully-qualified OpenRouter model slug, e.g.
+    ``anthropic/claude-3.5-sonnet`` or ``openai/gpt-4o-mini``.
+    """
+
+    name = "openrouter"
+    base_url = "https://openrouter.ai/api/v1"
+    env_key = "OPENROUTER_API_KEY"
+    extra_headers = {
+        # Optional attribution headers recommended by OpenRouter; harmless if
+        # the app isn't public. Kept static to avoid leaking host info.
+        "HTTP-Referer": "http://127.0.0.1",
+        "X-Title": "mychart-explorer",
+    }
 
 
 # --- Anthropic --------------------------------------------------------------
@@ -327,6 +355,12 @@ def make_provider(settings: dict) -> LLMProvider:
     if name == "openai":
         return OpenAIProvider(
             model=settings.get("openai_model", "gpt-4o-mini"),
+        )
+    if name == "openrouter":
+        return OpenRouterProvider(
+            model=settings.get("openrouter_model",
+                               "openai/gpt-4o-mini"),
+            base_url=settings.get("openrouter_url") or None,
         )
     if name == "anthropic":
         return AnthropicProvider(

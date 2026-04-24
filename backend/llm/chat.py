@@ -71,6 +71,8 @@ class SettingsPatch(BaseModel):
     ollama_url: str | None = None
     openai_model: str | None = None
     anthropic_model: str | None = None
+    openrouter_model: str | None = None
+    openrouter_url: str | None = None
     max_tool_turns: int | None = None
 
 
@@ -81,6 +83,9 @@ def get_settings() -> dict:
     s["has_openai_key"] = bool(__import__("os").environ.get("OPENAI_API_KEY"))
     s["has_anthropic_key"] = bool(
         __import__("os").environ.get("ANTHROPIC_API_KEY")
+    )
+    s["has_openrouter_key"] = bool(
+        __import__("os").environ.get("OPENROUTER_API_KEY")
     )
     return s
 
