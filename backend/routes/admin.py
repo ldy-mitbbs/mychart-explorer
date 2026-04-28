@@ -27,6 +27,7 @@ from .. import db
 from ..config import (
     DB_PATH,
     SCHEMA_JSON_PATH,
+    get_genome_source,
     get_source_dir,
     load_settings,
     save_settings,
@@ -66,6 +67,25 @@ def status() -> dict:
     out["last_ingest"] = settings.get("last_ingest", "")
     if source:
         out["source_info"] = _describe(source)
+    # Genome (23andMe) section.
+    genome_src = get_genome_source()
+    out["genome_source"] = str(genome_src) if genome_src else ""
+    out["genome_env_override"] = bool(
+        __import__("os").environ.get("MYCHART_GENOME")
+    )
+    if genome_src:
+        out["genome_info"] = _describe_genome(genome_src)
+    # Surface row counts for genome tables if present.
+    if DB_PATH.exists():
+        try:
+            tables = set(db.ingested_tables())
+            if "genome_meta" in tables:
+                meta_rows = db.query(
+                    "SELECT key, value FROM genome_meta"
+                )
+                out["genome_meta"] = {r["key"]: r["value"] for r in meta_rows}
+        except Exception:
+            pass
     return out
 
 
@@ -91,6 +111,40 @@ def set_source(body: SourceBody) -> dict:
 def validate(path: str) -> dict:
     p = Path(path.strip()).expanduser()
     return _describe(p)
+
+
+class GenomeSourceBody(BaseModel):
+    path: str
+
+
+@router.post("/genome-source")
+def set_genome_source(body: GenomeSourceBody) -> dict:
+    """Save the 23andMe export folder. Empty path clears the setting."""
+    raw = body.path.strip()
+    settings = load_settings()
+    if not raw:
+        settings["genome_source"] = ""
+        save_settings(settings)
+        return {"ok": True, "genome_info": {"source": "", "exists": False}}
+    p = Path(raw).expanduser()
+    if not p.exists():
+        raise HTTPException(400, f"Path does not exist: {p}")
+    info = _describe_genome(p)
+    settings["genome_source"] = str(p)
+    save_settings(settings)
+    return {"ok": True, "genome_info": info}
+
+
+@router.get("/validate-genome")
+def validate_genome(path: str) -> dict:
+    p = Path(path.strip()).expanduser()
+    return _describe_genome(p)
+
+
+@router.post("/pick-genome-folder")
+def pick_genome_folder() -> dict:
+    path = _open_native_folder_picker()
+    return {"path": path or ""}
 
 
 @router.post("/pick-folder")
@@ -146,6 +200,12 @@ def _describe(source: Path) -> dict:
     return describe_source(source)
 
 
+def _describe_genome(source: Path) -> dict:
+    from ingest.load_genome import describe_genome_source
+
+    return describe_genome_source(source)
+
+
 # ---------- ingestion (SSE stream) ----------
 
 class IngestBody(BaseModel):
@@ -153,8 +213,11 @@ class IngestBody(BaseModel):
     skip_tsv: bool = False
     skip_fhir: bool = False
     skip_notes: bool = False
+    skip_genome: bool = False
+    skip_clinvar: bool = False
     # Optional override — otherwise uses the saved/env source.
     source: Optional[str] = None
+    genome_source: Optional[str] = None
 
 
 @router.post("/ingest")
@@ -167,12 +230,24 @@ async def ingest(body: IngestBody):
     else:
         source = get_source_dir()
     if source is None:
-        raise HTTPException(
-            400,
-            "No source export configured. POST /api/admin/source first.",
-        )
-    if not source.exists():
+        # Genome-only ingest is allowed if the genome source is set.
+        if body.genome_source or get_genome_source():
+            source = Path(".").resolve()
+        else:
+            raise HTTPException(
+                400,
+                "No source configured. Set an Epic export path or a 23andMe export path first.",
+            )
+    elif not source.exists():
         raise HTTPException(400, f"Source path does not exist: {source}")
+
+    if body.genome_source:
+        genome_source = Path(body.genome_source).expanduser()
+    else:
+        genome_source = get_genome_source()
+    # If the user has no genome source configured, mark the phase skipped
+    # so the runner short-circuits cleanly.
+    skip_genome = body.skip_genome or genome_source is None
 
     from ingest.runner import IngestOptions, run_ingest
 
@@ -184,6 +259,9 @@ async def ingest(body: IngestBody):
         skip_tsv=body.skip_tsv,
         skip_fhir=body.skip_fhir,
         skip_notes=body.skip_notes,
+        genome_source=genome_source,
+        skip_genome=skip_genome,
+        skip_clinvar=body.skip_clinvar,
     )
 
     q: "queue.Queue[dict | None]" = queue.Queue()
@@ -205,6 +283,8 @@ async def ingest(body: IngestBody):
                 settings = load_settings()
                 settings["last_ingest"] = datetime.now().isoformat(timespec="seconds")
                 settings["source_dir"] = str(source)
+                if genome_source is not None:
+                    settings["genome_source"] = str(genome_source)
                 save_settings(settings)
                 db.reset_caches()
             except Exception as e:  # noqa: BLE001

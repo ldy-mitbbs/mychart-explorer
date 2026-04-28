@@ -754,6 +754,8 @@ export default function Chat({ onProviderChange }: { onProviderChange?: (p: stri
               <li>{t('chat.example.2')}</li>
               <li>{t('chat.example.3')}</li>
               <li>{t('chat.example.4')}</li>
+              <li>{t('chat.example.5')}</li>
+              <li>{t('chat.example.6')}</li>
             </ul>
           </div>
         )}

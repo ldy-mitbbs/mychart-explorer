@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
-from . import assemble_notes, load_fhir, load_tsv, parse_schema
+from . import assemble_notes, load_fhir, load_genome, load_tsv, parse_schema
 
 ProgressFn = Callable[[dict], None]
 
@@ -28,6 +28,12 @@ class IngestOptions:
     skip_tsv: bool = False
     skip_fhir: bool = False
     skip_notes: bool = False
+    # 23andMe / genome integration. ``genome_source`` may point to either
+    # a directory containing the export bundle or directly at the
+    # ``genome_*.txt`` file. ``None`` => skip the genome phase entirely.
+    genome_source: Optional[Path] = None
+    skip_genome: bool = False
+    skip_clinvar: bool = False
 
 
 @dataclass
@@ -79,12 +85,19 @@ def run_ingest(opts: IngestOptions, progress: Optional[ProgressFn] = None) -> In
     """Run the full ingest pipeline. Yields progress dicts through ``progress``.
 
     Progress shapes:
-      {"phase": "schema"|"tsv"|"fhir"|"notes"|"done", "status": "start"|"log"|"end",
+      {"phase": "schema"|"tsv"|"fhir"|"notes"|"genome"|"done",
+       "status": "start"|"log"|"end",
        "message": "...", "value": int?, "total": int?}
     """
     src = opts.source.expanduser()
-    missing = check_source(src)
-    if missing:
+    # When the user only wants to (re-)ingest genome data, the Epic export
+    # subfolders aren't required. We still run the rest of the pipeline if
+    # they're present.
+    epic_phases_skipped = (
+        opts.skip_schema and opts.skip_tsv and opts.skip_fhir and opts.skip_notes
+    )
+    missing = check_source(src) if not epic_phases_skipped else []
+    if missing and not epic_phases_skipped:
         msg = "Missing required subfolders: " + ", ".join(missing)
         _emit(progress, phase="done", status="error", message=msg)
         return IngestResult(ok=False, db=opts.db, message=msg)
@@ -99,18 +112,20 @@ def run_ingest(opts: IngestOptions, progress: Optional[ProgressFn] = None) -> In
     result = IngestResult(ok=True, db=opts.db)
 
     # --- schema.json ---
-    t0 = time.time()
-    if opts.skip_schema and opts.schema_json.exists():
-        schema_json = json.loads(opts.schema_json.read_text(encoding="utf-8"))
-        _emit(progress, phase="schema", status="end",
-              message=f"reusing {opts.schema_json.name} ({len(schema_json)} tables)")
-    else:
-        _emit(progress, phase="schema", status="start",
-              message=f"parsing {schema_dir}")
-        n = parse_schema.write_schema_json(schema_dir, opts.schema_json)
-        schema_json = json.loads(opts.schema_json.read_text(encoding="utf-8"))
-        _emit(progress, phase="schema", status="end",
-              message=f"parsed {n} tables in {time.time()-t0:.1f}s")
+    schema_json: dict = {}
+    if not (epic_phases_skipped and not schema_dir.exists()):
+        t0 = time.time()
+        if opts.skip_schema and opts.schema_json.exists():
+            schema_json = json.loads(opts.schema_json.read_text(encoding="utf-8"))
+            _emit(progress, phase="schema", status="end",
+                  message=f"reusing {opts.schema_json.name} ({len(schema_json)} tables)")
+        elif schema_dir.exists():
+            _emit(progress, phase="schema", status="start",
+                  message=f"parsing {schema_dir}")
+            n = parse_schema.write_schema_json(schema_dir, opts.schema_json)
+            schema_json = json.loads(opts.schema_json.read_text(encoding="utf-8"))
+            _emit(progress, phase="schema", status="end",
+                  message=f"parsed {n} tables in {time.time()-t0:.1f}s")
 
     conn = sqlite3.connect(opts.db)
     try:
@@ -118,7 +133,7 @@ def run_ingest(opts: IngestOptions, progress: Optional[ProgressFn] = None) -> In
         conn.execute("PRAGMA synchronous=NORMAL")
 
         # --- curated TSVs ---
-        if not opts.skip_tsv:
+        if not opts.skip_tsv and tsv_dir.exists():
             t0 = time.time()
             _emit(progress, phase="tsv", status="start",
                   message=f"loading curated tables from {tsv_dir}")
@@ -129,7 +144,7 @@ def run_ingest(opts: IngestOptions, progress: Optional[ProgressFn] = None) -> In
                           f"({sum(counts.values())} rows) in {time.time()-t0:.1f}s")
 
         # --- FHIR ---
-        if not opts.skip_fhir:
+        if not opts.skip_fhir and fhir_dir.exists():
             t0 = time.time()
             _emit(progress, phase="fhir", status="start",
                   message=f"loading {fhir_dir}")
@@ -142,9 +157,37 @@ def run_ingest(opts: IngestOptions, progress: Optional[ProgressFn] = None) -> In
             t0 = time.time()
             _emit(progress, phase="notes", status="start",
                   message="assembling notes + messages + FTS")
-            assemble_notes.assemble(conn)
-            _emit(progress, phase="notes", status="end",
-                  message=f"done in {time.time()-t0:.1f}s")
+            try:
+                assemble_notes.assemble(conn)
+                _emit(progress, phase="notes", status="end",
+                      message=f"done in {time.time()-t0:.1f}s")
+            except sqlite3.OperationalError as e:
+                # Notes assembly depends on EHI tables — skip silently if
+                # the user is only doing a genome-only re-ingest.
+                _emit(progress, phase="notes", status="log",
+                      message=f"skipped: {e}")
+
+        # --- genome (23andMe + ClinVar) ---
+        if not opts.skip_genome and opts.genome_source is not None:
+            t0 = time.time()
+            gsrc = opts.genome_source.expanduser()
+            _emit(progress, phase="genome", status="start",
+                  message=f"loading genome data from {gsrc}")
+            try:
+                gcounts = load_genome.load_all(
+                    conn, gsrc,
+                    clinvar_cache_dir=opts.db.parent / "clinvar",
+                    skip_clinvar=opts.skip_clinvar,
+                    progress=progress,
+                )
+                _emit(progress, phase="genome", status="end",
+                      message=f"genome={gcounts['variants']:,} variants, "
+                              f"ancestry={gcounts['ancestry']} segments, "
+                              f"clinvar={gcounts['clinvar']:,} rows "
+                              f"in {time.time()-t0:.1f}s")
+            except Exception as e:  # noqa: BLE001
+                _emit(progress, phase="genome", status="error",
+                      message=f"genome load failed: {e}")
 
         conn.execute("PRAGMA optimize")
     finally:

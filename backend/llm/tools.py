@@ -362,6 +362,176 @@ def get_patient_summary(**_: Any) -> dict:
     }
 
 
+# --- Genome (23andMe + ClinVar) ---------------------------------------------
+
+def _genome_loaded() -> bool:
+    try:
+        return "genome_variants" in set(db.ingested_tables())
+    except Exception:
+        return False
+
+
+def _clinvar_loaded() -> bool:
+    try:
+        return "clinvar_variants" in set(db.ingested_tables())
+    except Exception:
+        return False
+
+
+def _normalize_rsid(rsid: str) -> str:
+    s = (rsid or "").strip()
+    if not s:
+        return s
+    if s.lower().startswith("rs"):
+        return "rs" + s[2:]
+    if s.isdigit():
+        return f"rs{s}"
+    return s
+
+
+def lookup_snp(rsid: str, **_: Any) -> dict:
+    if not _genome_loaded():
+        return {"error": "genome data not ingested"}
+    rs = _normalize_rsid(rsid)
+    if not rs:
+        return {"error": "rsid required"}
+    row = db.query_one(
+        "SELECT rsid, chromosome, position, genotype "
+        "FROM genome_variants WHERE rsid=? COLLATE NOCASE",
+        (rs,),
+    )
+    if not row:
+        return {"rsid": rs, "found": False,
+                "note": "rsid not present in your 23andMe array."}
+    annotations: list[dict] = []
+    if _clinvar_loaded():
+        annotations = db.query(
+            "SELECT gene_symbol, clinical_significance, phenotype, "
+            "review_status, variation_id, variant_type "
+            "FROM clinvar_variants WHERE rs_id=? COLLATE NOCASE "
+            "ORDER BY clinical_significance LIMIT ?",
+            (rs, MAX_ROWS),
+        )
+    return {
+        "rsid": rs,
+        "found": True,
+        "genotype": row["genotype"],
+        "chromosome": row["chromosome"],
+        "position": row["position"],
+        "annotations": annotations,
+        "annotation_count": len(annotations),
+    }
+
+
+_NOTABLE_KEYWORDS = (
+    "Pathogenic", "Likely pathogenic", "drug response",
+    "risk factor", "association", "protective",
+)
+
+
+def list_notable_variants(limit: int = 100, **_: Any) -> dict:
+    """Variants the patient carries that ClinVar tags as clinically interesting."""
+    if not _genome_loaded():
+        return {"error": "genome data not ingested"}
+    if not _clinvar_loaded():
+        return {"error": "ClinVar annotations not loaded"}
+    lim = max(1, min(int(limit or 100), MAX_ROWS))
+    ors = " OR ".join(["c.clinical_significance LIKE ?"] * len(_NOTABLE_KEYWORDS))
+    params = tuple(f"%{kw}%" for kw in _NOTABLE_KEYWORDS)
+    rows = db.query(
+        "SELECT g.rsid, g.genotype, c.gene_symbol, "
+        "c.clinical_significance, c.phenotype, c.review_status, "
+        "c.variation_id "
+        "FROM genome_variants g "
+        "JOIN clinvar_variants c ON c.rs_id = g.rsid "
+        f"WHERE ({ors}) "
+        "AND g.genotype NOT IN ('--', '') AND g.genotype IS NOT NULL "
+        "ORDER BY "
+        "  CASE "
+        "    WHEN c.clinical_significance LIKE '%Pathogenic%' AND c.clinical_significance NOT LIKE '%Likely%' THEN 0 "
+        "    WHEN c.clinical_significance LIKE '%Likely pathogenic%' THEN 1 "
+        "    WHEN c.clinical_significance LIKE '%drug response%' THEN 2 "
+        "    WHEN c.clinical_significance LIKE '%risk factor%' THEN 3 "
+        "    ELSE 4 END, "
+        "  c.gene_symbol "
+        "LIMIT ?",
+        params + (lim,),
+    )
+    return {"count": len(rows), "variants": rows}
+
+
+def search_variants_by_gene(gene: str, limit: int = 100, **_: Any) -> dict:
+    if not _genome_loaded():
+        return {"error": "genome data not ingested"}
+    if not _clinvar_loaded():
+        return {"error": "ClinVar annotations not loaded"}
+    sym = (gene or "").strip().upper()
+    if not sym:
+        return {"error": "gene symbol required"}
+    lim = max(1, min(int(limit or 100), MAX_ROWS))
+    rows = db.query(
+        "SELECT g.rsid, g.genotype, c.gene_symbol, "
+        "c.clinical_significance, c.phenotype, c.review_status, "
+        "c.variation_id "
+        "FROM clinvar_variants c "
+        "JOIN genome_variants g ON g.rsid = c.rs_id "
+        "WHERE c.gene_symbol = ? COLLATE NOCASE "
+        "AND g.genotype NOT IN ('--', '') AND g.genotype IS NOT NULL "
+        "ORDER BY "
+        "  CASE "
+        "    WHEN c.clinical_significance LIKE '%Pathogenic%' AND c.clinical_significance NOT LIKE '%Likely%' AND c.clinical_significance NOT LIKE '%Conflicting%' THEN 0 "
+        "    WHEN c.clinical_significance LIKE '%Likely pathogenic%' THEN 1 "
+        "    WHEN c.clinical_significance LIKE '%drug response%' THEN 2 "
+        "    WHEN c.clinical_significance LIKE '%risk factor%' THEN 3 "
+        "    WHEN c.clinical_significance LIKE '%Conflicting%' THEN 4 "
+        "    WHEN c.clinical_significance LIKE '%Benign%' THEN 9 "
+        "    ELSE 5 END "
+        "LIMIT ?",
+        (sym, lim),
+    )
+    if not rows:
+        # Suggest closest gene symbols actually present in the user's
+        # genotyped × ClinVar intersection.
+        candidates = db.query(
+            "SELECT DISTINCT c.gene_symbol AS gene "
+            "FROM clinvar_variants c JOIN genome_variants g ON g.rsid = c.rs_id "
+            "WHERE c.gene_symbol LIKE ? ORDER BY gene LIMIT 20",
+            (f"%{sym}%",),
+        )
+        return {
+            "gene": sym, "count": 0, "variants": [],
+            "candidates": [c["gene"] for c in candidates if c.get("gene")],
+        }
+    return {"gene": sym, "count": len(rows), "variants": rows}
+
+
+def get_ancestry_summary(**_: Any) -> dict:
+    if not _genome_loaded():
+        return {"error": "genome data not ingested"}
+    try:
+        rows = db.query(
+            "SELECT ancestry, copy, chromosome, start_pos, end_pos "
+            "FROM genome_ancestry"
+        )
+    except Exception:
+        return {"error": "ancestry data not loaded"}
+    if not rows:
+        return {"populations": []}
+    by_pop: dict[str, int] = {}
+    total = 0
+    for r in rows:
+        seg = max(0, int(r["end_pos"]) - int(r["start_pos"]))
+        by_pop[r["ancestry"]] = by_pop.get(r["ancestry"], 0) + seg
+        total += seg
+    pops = [
+        {"ancestry": k, "length_bp": v,
+         "percent": round((v / total * 100) if total else 0, 2)}
+        for k, v in sorted(by_pop.items(), key=lambda x: -x[1])
+    ]
+    return {"populations": pops, "total_segment_bp": total,
+            "segment_count": len(rows)}
+
+
 # --- Registry ---------------------------------------------------------------
 
 ToolHandler = Callable[..., Any]
@@ -434,6 +604,37 @@ TOOLS: dict[str, tuple[ToolHandler, dict]] = {
     "get_patient_summary": (get_patient_summary, {
         "type": "object", "properties": {}, "additionalProperties": False,
     }),
+    "lookup_snp": (lookup_snp, {
+        "type": "object",
+        "properties": {
+            "rsid": {
+                "type": "string",
+                "description": "An rsid (e.g. 'rs429358' for APOE). "
+                               "A bare numeric ID is auto-prefixed with 'rs'.",
+            },
+        },
+        "required": ["rsid"],
+    }),
+    "list_notable_variants": (list_notable_variants, {
+        "type": "object",
+        "properties": {
+            "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+        },
+    }),
+    "search_variants_by_gene": (search_variants_by_gene, {
+        "type": "object",
+        "properties": {
+            "gene": {
+                "type": "string",
+                "description": "HGNC gene symbol (e.g. 'APOE', 'BRCA1', 'CYP2C19').",
+            },
+            "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+        },
+        "required": ["gene"],
+    }),
+    "get_ancestry_summary": (get_ancestry_summary, {
+        "type": "object", "properties": {}, "additionalProperties": False,
+    }),
 }
 
 
@@ -463,6 +664,22 @@ TOOL_DESCRIPTIONS: dict[str, str] = {
         "Return a precomputed summary: demographics, active problems, "
         "allergies, recent medications, recent encounters. Good default "
         "context for open-ended questions.",
+    "lookup_snp":
+        "Look up the patient's genotype at a single rsid (from 23andMe). "
+        "Returns the call (e.g. 'AG') plus any ClinVar annotations for "
+        "that rsid. Use for targeted variant questions like APOE "
+        "(rs429358 + rs7412) or MTHFR (rs1801133).",
+    "list_notable_variants":
+        "List variants the patient carries that ClinVar tags as "
+        "Pathogenic / Likely pathogenic / drug response / risk factor / "
+        "association / protective. Genotyping arrays miss rare variants — "
+        "absence here does NOT rule out a condition.",
+    "search_variants_by_gene":
+        "Find ClinVar-annotated variants in a given gene that the patient "
+        "actually has a genotype call for. Accepts an HGNC symbol.",
+    "get_ancestry_summary":
+        "Return the patient's 23andMe ancestry composition aggregated by "
+        "population (percent of genome covered).",
 }
 
 

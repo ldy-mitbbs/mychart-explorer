@@ -66,6 +66,7 @@ _DEFAULT_SETTINGS = {
     "openrouter_url": "",  # blank = use https://openrouter.ai/api/v1
     "max_tool_turns": 20,  # cap on tool-calling loop iterations per chat turn
     "source_dir": "",  # set via UI or MYCHART_SOURCE env var
+    "genome_source": "",  # 23andMe export folder; set via UI or MYCHART_GENOME env var
 }
 
 
@@ -101,6 +102,20 @@ def get_source_dir() -> Optional[Path]:
     if env:
         return Path(env).expanduser()
     cfg = (load_settings().get("source_dir") or "").strip()
+    if cfg:
+        return Path(cfg).expanduser()
+    return None
+
+
+def get_genome_source() -> Optional[Path]:
+    """Return the user-configured 23andMe export folder, or ``None``.
+
+    Resolution order: ``MYCHART_GENOME`` env var > settings.json > None.
+    """
+    env = os.environ.get("MYCHART_GENOME")
+    if env:
+        return Path(env).expanduser()
+    cfg = (load_settings().get("genome_source") or "").strip()
     if cfg:
         return Path(cfg).expanduser()
     return None

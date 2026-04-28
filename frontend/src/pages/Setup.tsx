@@ -14,6 +14,15 @@ interface SourceInfo {
   fhir_file_count?: number;
 }
 
+interface GenomeSourceInfo {
+  source: string;
+  exists: boolean;
+  has_genome?: boolean;
+  has_ancestry?: boolean;
+  genome_file?: string;
+  ancestry_file?: string;
+}
+
 interface Status {
   db_path: string;
   db_exists: boolean;
@@ -24,6 +33,10 @@ interface Status {
   ingested_table_count?: number;
   last_ingest?: string;
   source_info?: SourceInfo;
+  genome_source?: string;
+  genome_env_override?: boolean;
+  genome_info?: GenomeSourceInfo;
+  genome_meta?: Record<string, string>;
 }
 
 interface LogEvent {
@@ -51,12 +64,19 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
   const logRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
+  // Genome (23andMe) source state.
+  const [genomePath, setGenomePath] = useState('');
+  const [genomeInfo, setGenomeInfo] = useState<GenomeSourceInfo | null>(null);
+  const [skipClinvar, setSkipClinvar] = useState(false);
+
   const refresh = () => {
     api<Status>('/api/admin/status')
       .then((s) => {
         setStatus(s);
         if (s.source_dir && !path) setPath(s.source_dir);
         if (s.source_info) setInfo(s.source_info);
+        if (s.genome_source && !genomePath) setGenomePath(s.genome_source);
+        if (s.genome_info) setGenomeInfo(s.genome_info);
       })
       .catch(() => { /* ignore */ });
   };
@@ -132,7 +152,11 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
       const res = await fetch('/api/admin/ingest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source: path }),
+        body: JSON.stringify({
+          source: path,
+          genome_source: genomePath || undefined,
+          skip_clinvar: skipClinvar,
+        }),
         signal: ctrl.signal,
       });
       if (!res.ok || !res.body) {
@@ -169,6 +193,64 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
   };
 
   const ready = info && info.exists && (info.missing?.length ?? 1) === 0;
+
+  // Genome handlers.
+  const validateGenome = async (override?: string) => {
+    const target = override ?? genomePath;
+    if (!target) { setGenomeInfo(null); return; }
+    setError('');
+    setBusy(true);
+    try {
+      const r = await api<GenomeSourceInfo>(
+        `/api/admin/validate-genome?path=${encodeURIComponent(target)}`,
+      );
+      setGenomeInfo(r);
+    } catch (e: any) {
+      setError(e.message || t('setup.err.validation'));
+      setGenomeInfo(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const browseGenome = async () => {
+    setError('');
+    setBusy(true);
+    try {
+      const r = await api<{ path: string }>('/api/admin/pick-genome-folder', {
+        method: 'POST',
+      });
+      if (r.path) {
+        setGenomePath(r.path);
+        await validateGenome(r.path);
+      }
+    } catch (e: any) {
+      setError(e.message || t('setup.err.pickFolder'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveGenome = async () => {
+    setError('');
+    setBusy(true);
+    try {
+      const r = await api<{ genome_info: GenomeSourceInfo }>(
+        '/api/admin/genome-source',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path: genomePath }),
+        },
+      );
+      setGenomeInfo(r.genome_info);
+      refresh();
+    } catch (e: any) {
+      setError(e.message || t('setup.err.save'));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <div style={{ maxWidth: 860 }}>
@@ -292,6 +374,73 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
       </div>
 
       <div className="card">
+        <h3>{t('setup.genome.title')}</h3>
+        <p className="small muted">{t('setup.genome.help')}</p>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <input
+            type="text"
+            value={genomePath}
+            onChange={(e) => setGenomePath(e.target.value)}
+            placeholder={t('setup.genome.placeholder')}
+            style={{
+              flex: 1, padding: 8,
+              background: 'var(--bg-2)', color: 'var(--text)',
+              border: '1px solid var(--border)', borderRadius: 6,
+            }}
+            disabled={busy || running}
+          />
+          <button className="btn" onClick={browseGenome} disabled={busy || running}>
+            {t('setup.btn.browse')}
+          </button>
+          <button className="btn" onClick={() => validateGenome()} disabled={!genomePath || busy || running}>
+            {t('setup.btn.validate')}
+          </button>
+          <button className="btn" onClick={saveGenome} disabled={busy || running}>
+            {t('setup.btn.save')}
+          </button>
+        </div>
+        {genomeInfo && genomeInfo.exists && (
+          <ul className="small" style={{ listStyle: 'none', padding: 0, margin: '12px 0 0 0' }}>
+            <li>
+              {genomeInfo.has_genome ? '✓' : '✗'}{' '}
+              {t('setup.genome.found.genome', {
+                file: genomeInfo.genome_file || t('setup.genome.notFound'),
+              })}
+            </li>
+            <li>
+              {genomeInfo.has_ancestry ? '✓' : '✗'}{' '}
+              {t('setup.genome.found.ancestry', {
+                file: genomeInfo.ancestry_file || t('setup.genome.notFound'),
+              })}
+            </li>
+          </ul>
+        )}
+        {genomeInfo && !genomeInfo.exists && genomePath && (
+          <div className="small" style={{ marginTop: 8 }}>
+            <span className="pill bad">{t('setup.err.notFound')}</span>
+          </div>
+        )}
+        <label className="small row" style={{ marginTop: 12, gap: 6 }}>
+          <input
+            type="checkbox"
+            checked={skipClinvar}
+            onChange={(e) => setSkipClinvar(e.target.checked)}
+            disabled={running}
+          />
+          {t('setup.genome.skipClinvar')}
+        </label>
+        {status?.genome_meta && (
+          <div className="small muted" style={{ marginTop: 8 }}>
+            {t('setup.genome.lastIngest', {
+              variants: status.genome_meta.variant_count || '0',
+              clinvar: status.genome_meta.clinvar_row_count || '0',
+              when: status.genome_meta.ingested_at || '',
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
         <h3>{t('setup.step2.title')}</h3>
         <p className="small muted">
           {t('setup.step2.help')}
@@ -299,7 +448,7 @@ export default function Setup({ onDone }: { onDone?: () => void }) {
         <button
           className="btn"
           onClick={runIngest}
-          disabled={!ready || running}
+          disabled={(!ready && !genomeInfo?.has_genome) || running}
         >
           {running ? t('setup.btn.running') : status?.db_exists ? t('setup.btn.reingest') : t('setup.btn.start')}
         </button>

@@ -32,6 +32,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--skip-fhir", action="store_true")
     p.add_argument("--skip-notes", action="store_true")
     p.add_argument("--skip-schema", action="store_true")
+    p.add_argument(
+        "--genome-source", default=None,
+        help="Path to a 23andMe export folder (or genome_*.txt file). "
+             "Loads genome_variants/genome_ancestry/clinvar_variants tables.",
+    )
+    p.add_argument("--skip-genome", action="store_true",
+                   help="Skip the genome phase even if --genome-source is set.")
+    p.add_argument("--skip-clinvar", action="store_true",
+                   help="Skip the ClinVar download/annotation step.")
     args = p.parse_args(argv)
 
     opts = IngestOptions(
@@ -42,6 +51,9 @@ def main(argv: list[str] | None = None) -> int:
         skip_tsv=args.skip_tsv,
         skip_fhir=args.skip_fhir,
         skip_notes=args.skip_notes,
+        genome_source=Path(args.genome_source).expanduser() if args.genome_source else None,
+        skip_genome=args.skip_genome,
+        skip_clinvar=args.skip_clinvar,
     )
     result = run_ingest(opts, progress=_print)
     if not result.ok:

@@ -11,11 +11,14 @@
 - **无需命令行即可完成配置**：在应用内的 **Setup page** 中选择你的导出目录，然后点击 *Start ingest*，即可实时查看 ingest progress。
 - **精选 dashboard**：提供 summary、problems、medications、allergies、labs（含 trend chart 和 reference range）、vitals、immunizations、history、encounters 完整详情、支持 FTS5 full-text search 的 clinical notes、MyChart messages（RTF 转纯文本），以及所有扁平化后的 FHIR resources。
 - **Tables browser**：可查看 Epic 导出中的全部表（约 3700 张）。已 ingest 的表通过 SQLite 访问，其余表则按需从 TSV 流式读取；每一列的说明来自 Epic data dictionary，并以 hover tooltip 的形式展示。
+- **可选的 23andMe 基因数据**：把 23andMe raw data 文件夹（`genome_*.txt`，可选附带 ancestry composition CSV）也指给应用，它会把约 140 万个 SNP 基因型加载进 SQLite，并自动下载并缓存 NCBI **ClinVar**（约 440 MB，GRCh37）做注释关联。这样你就可以在专门的 **Genome (23andMe)** 标签页和 chat 里浏览致病变异、影响药物反应的位点，按 rsid 或基因查询，并查看 ancestry breakdown。
 - **read-only SQL console**：仅允许执行 SELECT，自动附加 LIMIT，并使用 `sqlglot` 做语法校验。
 - **AI chat（支持 tool calling）**：模型可以调用
   `get_patient_summary`、`list_tables`、`describe_table`、`run_sql`、
-  `search_notes`、`get_note`、`get_message` 和 `lab_trend`。回答会附带 source citation，例如
-  `[note:123]`、`[msg:456]`、`[table:PROBLEMS code=...]`。
+  `search_notes`、`get_note`、`get_message`、`lab_trend`，以及基因相关的
+  `lookup_snp`、`list_notable_variants`、`search_variants_by_gene`、
+  `get_ancestry_summary`。回答会附带 source citation，例如
+  `[note:123]`、`[msg:456]`、`[table:PROBLEMS code=...]`、`[rsid:rs429358]`。
 - **Pluggable LLM**：支持 Ollama（默认,本地）、OpenAI 和 Anthropic。启用 cloud provider 时,界面上会显示红色的 *"PHI sent to …"(个人健康信息已发送至…)* warning banner。
 - **中英双语界面（English / 简体中文）**：顶部导航栏可切换语言,偏好会保存在 localStorage 中,首次访问时会根据浏览器语言自动判断(`zh-*` 浏览器默认中文)。非常适合把这个应用分享给英文阅读不便的家人长辈——用中文提问,本地 LLM 也会用中文作答。
 
@@ -28,6 +31,10 @@
 ![Summary dashboard：当前问题、最近的生命体征和近期化验结果](docs/screenshots/summary.png)
 
 ![糖化血红蛋白（HEMOGLOBIN A1C）的化验趋势图](docs/screenshots/labs.png)
+
+![AI 把 23andMe 中的 2 型糖尿病风险位点与 HbA1c 化验趋势同时拿出来联合分析](docs/screenshots/chat-genome.png)
+
+![AI 主动提示基因芯片和 ClinVar 的局限性](docs/screenshots/chat-genome-caveats.png)
 
 ![Setup page 展示 ingest progress](docs/screenshots/setup.png)
 
@@ -158,16 +165,54 @@ uvicorn backend.main:app --host 127.0.0.1 --port 8765
 | `MYCHART_SOURCE` | — | 覆盖源目录（否则使用 Setup 页面的设置） |
 | `MYCHART_DB` | `data/mychart.db` | 输出的 SQLite 路径 |
 | `MYCHART_SCHEMA_JSON` | `data/schema.json` | 解析后的 data dictionary 路径 |
+| `MYCHART_GENOME` | — | 覆盖 23andMe 导出目录/文件（否则使用 Setup 页面的设置） |
 | `OPENAI_API_KEY` | — | 启用 OpenAI provider |
 | `ANTHROPIC_API_KEY` | — | 启用 Anthropic provider |
 
 ## Ingest flags
 
 ```sh
-python -m ingest --source ... --db ... [--skip-schema] [--skip-tsv] [--skip-fhir] [--skip-notes]
+python -m ingest --source ... --db ... \
+  [--skip-schema] [--skip-tsv] [--skip-fhir] [--skip-notes] \
+  [--genome-source PATH] [--skip-genome] [--skip-clinvar]
 ```
 
-每个阶段都是幂等且彼此独立的，因此即使你修改了 `ingest/tables.py` 中的精选表列表，也可以放心重新运行。
+每个阶段都是幂等且彼此独立的，因此即使你修改了 `ingest/tables.py` 中的精选表列表，或者把新的 23andMe 导出放进了基因目录，都可以放心重新运行。
+
+## 23andMe 基因数据（可选）
+
+![AI 同时调用 23andMe 变异和 HbA1c 化验数据进行跨领域推理](docs/screenshots/chat-genome.png)
+
+Epic 导出的是你的临床病历；基因层补上 DNA。两者会合并写入同一个 `data/mychart.db`，所以 AI 在同一段对话里既能看化验和病历笔记，也能看变异位点。
+
+**你需要准备什么。** 在 [you.23andme.com → Browse Raw Data → Download](https://you.23andme.com/tools/data/download/) 中下载 **raw data**（即形如 `genome_<姓名>_v3_v5_Full_<时间戳>.txt` 的文件）。ancestry composition CSV 不是必需的，但提供后会驱动 *Ancestry* 标签页。
+
+**配置方式。** 进入 **Setup** 页面，在 *3. (Optional) 23andMe genome export* 中填入 raw data 文件或其所在目录的绝对路径。点 *Validate*（应用会自动识别两个文件），再 *Save*，然后 *Start ingest*。基因层可以单独重新 ingest，无需重新跑 Epic 部分。
+
+**关于 ClinVar。** 第一次运行时，ingester 会从 NCBI 下载 `variant_summary.txt.gz`（约 440 MB）到 `data/clinvar/`，过滤出 GRCh37 且带 rs# 的条目，加载约 290 万行注释。如果你希望完全离线运行，可以勾选 *Skip ClinVar download*——基因型数据照常入库，只是没有临床注释。
+
+**命令行用法。**
+
+```sh
+# 首次基因 ingest（会下载 ClinVar）：
+python -m ingest --genome-source "/path/to/23andMe-folder"
+
+# 仅重新加载基因层，复用之前缓存的 ClinVar：
+python -m ingest --genome-source "/path/to/23andMe-folder" \
+  --skip-schema --skip-tsv --skip-fhir --skip-notes
+
+# 完全跳过 ClinVar（仅入库原始基因型）：
+python -m ingest --genome-source "/path/to/23andMe-folder" --skip-clinvar
+```
+
+**可以试着这样问 AI：**
+
+- *“我的 APOE 基因型是什么？对阿尔茨海默病风险有什么影响？”*
+- *“我携带 BRCA1 或 BRCA2 上的致病变异吗？”*
+- *“查一下 rs1801133——我有 MTHFR 变异吗？”*
+- *“看一下我的 ancestry composition。”*
+
+**注意事项。** 23andMe 的 genotyping array 实际只读取约 60 万–140 万个 SNP，远不到 30 亿碱基的全基因组——它**漏掉绝大多数罕见变异**，**无法检测拷贝数变化**，**也不带相位信息**。ClinVar 的命中只是筛查级别的提示，不是诊断。系统 prompt 会提醒模型主动声明这些局限，但任何实际行动都请先咨询临床遗传学专业人员。
 
 ## Adding more tables
 

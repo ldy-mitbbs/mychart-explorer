@@ -21,12 +21,20 @@ unless you explicitly opt in to a cloud provider.
 - **Generic table browser**: every table in your Epic export (~3,700 tables)
   — ingested ones via SQLite, the rest streamed from TSV on demand — with
   column descriptions from the Epic data dictionary as hover tooltips.
+- **Optional 23andMe genome layer**: point at your raw 23andMe export
+  (`genome_*.txt` plus optional ancestry CSV) and the app loads ~1.4M SNP
+  genotypes into SQLite, then joins them against a cached NCBI **ClinVar**
+  download (~440 MB, GRCh37) so you can browse pathogenic / drug-response
+  variants, look up any rsid, search by gene, and view your ancestry
+  breakdown — in the dedicated **Genome (23andMe)** tab and from chat.
 - **Read-only SQL console**: SELECT-only, auto-LIMITed, parse-validated with
   `sqlglot`.
 - **AI chat** with tool-calling: the model can call
   `get_patient_summary`, `list_tables`, `describe_table`, `run_sql`,
-  `search_notes`, `get_note`, `get_message`, and `lab_trend`. Responses cite
-  sources like `[note:123]`, `[msg:456]`, `[table:PROBLEMS code=...]`.
+  `search_notes`, `get_note`, `get_message`, `lab_trend`, plus the genome
+  tools `lookup_snp`, `list_notable_variants`, `search_variants_by_gene`,
+  and `get_ancestry_summary`. Responses cite sources like `[note:123]`,
+  `[msg:456]`, `[table:PROBLEMS code=...]`, `[rsid:rs429358]`.
 - **Pluggable LLM**: Ollama (default, local), OpenAI, or Anthropic. Cloud
   providers show a red *"PHI sent to …"* banner while active.
 - **Bilingual UI (English / 简体中文)**: toggle the language from the header.
@@ -44,6 +52,10 @@ unless you explicitly opt in to a cloud provider.
 ![Summary dashboard with active problems, latest vitals, and recent labs](docs/screenshots/summary.png)
 
 ![Lab trend chart for HEMOGLOBIN A1C](docs/screenshots/labs.png)
+
+![AI cross-referencing 23andMe T2D risk loci with the patient's HbA1c history](docs/screenshots/chat-genome.png)
+
+![AI flagging the limits of array-based genotyping and ClinVar matches](docs/screenshots/chat-genome-caveats.png)
 
 ![Setup page showing ingestion state](docs/screenshots/setup.png)
 
@@ -196,17 +208,73 @@ All env vars are optional — you can configure the app from the Setup page inst
 | `MYCHART_SOURCE` | — | Override source folder (else use Setup page) |
 | `MYCHART_DB` | `data/mychart.db` | Output SQLite path |
 | `MYCHART_SCHEMA_JSON` | `data/schema.json` | Parsed data-dictionary path |
+| `MYCHART_GENOME` | — | Override 23andMe export folder/file (else use Setup page) |
 | `OPENAI_API_KEY` | — | Enables OpenAI provider |
 | `ANTHROPIC_API_KEY` | — | Enables Anthropic provider |
 
 ## Ingest flags
 
 ```sh
-python -m ingest --source ... --db ... [--skip-schema] [--skip-tsv] [--skip-fhir] [--skip-notes]
+python -m ingest --source ... --db ... \
+  [--skip-schema] [--skip-tsv] [--skip-fhir] [--skip-notes] \
+  [--genome-source PATH] [--skip-genome] [--skip-clinvar]
 ```
 
 Each phase is idempotent and independent, so it's safe to re-run after
-editing the curated-tables list in `ingest/tables.py`.
+editing the curated-tables list in `ingest/tables.py` or after dropping a
+new 23andMe export into the genome folder.
+
+## 23andMe genome (optional)
+
+![AI joining 23andMe T2D risk loci with HbA1c lab history in one answer](docs/screenshots/chat-genome.png)
+
+The Epic export covers your clinical record; the genome layer adds your
+DNA. Both are merged into the same `data/mychart.db` so the AI can reason
+across labs *and* variants in a single conversation.
+
+**What you need.** Download your **raw data** from
+[you.23andme.com → Browse Raw Data → Download](https://you.23andme.com/tools/data/download/)
+(this is the `genome_<name>_v3_v5_Full_<ts>.txt` file). The ancestry
+composition CSV is optional and contributes the *Ancestry* tab.
+
+**Set it up.** On the **Setup** page, fill in section *3. (Optional)
+23andMe genome export* with the absolute path to either the genome `.txt`
+file or the folder containing it. Click *Validate* (the app auto-detects
+both files), *Save*, then *Start ingest*. You can re-ingest the genome
+layer alone — no Epic export required.
+
+**ClinVar.** On first run the ingester downloads NCBI ClinVar's
+`variant_summary.txt.gz` (~440 MB) into `data/clinvar/`, filters it to
+GRCh37 + entries with an rs#, and loads ~2.9M rows. Tick *Skip ClinVar
+download* if you want a fully offline run — you'll still get raw
+genotypes, just no clinical annotations.
+
+**CLI.**
+
+```sh
+# First-time genome ingest (downloads ClinVar):
+python -m ingest --genome-source "/path/to/23andMe-folder"
+
+# Genome only, re-using a previously cached ClinVar copy:
+python -m ingest --genome-source "/path/to/23andMe-folder" \
+  --skip-schema --skip-tsv --skip-fhir --skip-notes
+
+# Skip ClinVar entirely (raw genotypes only):
+python -m ingest --genome-source "/path/to/23andMe-folder" --skip-clinvar
+```
+
+**Try asking the AI.**
+
+- *"What is my APOE genotype and what does it mean for Alzheimer's risk?"*
+- *"Do I carry any pathogenic variants in BRCA1 or BRCA2?"*
+- *"Look up rs1801133 — do I have the MTHFR variant?"*
+- *"What does my ancestry composition look like?"*
+
+**Caveats.** 23andMe genotyping arrays read ~600k–1.4M SNPs out of ~3
+billion bases — they miss most rare variants, do not detect copy-number
+changes, and are not phased. ClinVar matches are screening hints, not
+diagnoses. The system prompt nudges the model to flag these limits, but
+don't act on results without talking to a clinical geneticist.
 
 ## Adding more tables
 

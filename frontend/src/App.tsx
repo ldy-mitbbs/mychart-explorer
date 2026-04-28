@@ -17,12 +17,13 @@ import Immunizations from './pages/Immunizations';
 import History from './pages/History';
 import Tables from './pages/Tables';
 import Chat from './pages/Chat';
+import Genome from './pages/Genome';
 import Setup from './pages/Setup';
 
 type Page =
   | 'summary' | 'problems' | 'allergies' | 'medications' | 'labs' | 'vitals'
   | 'encounters' | 'imaging' | 'notes' | 'messages' | 'immunizations'
-  | 'history' | 'tables' | 'chat' | 'setup';
+  | 'history' | 'tables' | 'chat' | 'genome' | 'setup';
 
 const nav: { key: Page; labelKey: TKey; sectionKey?: TKey }[] = [
   { key: 'summary', labelKey: 'nav.summary', sectionKey: 'nav.section.overview' },
@@ -38,6 +39,7 @@ const nav: { key: Page; labelKey: TKey; sectionKey?: TKey }[] = [
   { key: 'imaging', labelKey: 'nav.imaging' },
   { key: 'notes', labelKey: 'nav.notes' },
   { key: 'messages', labelKey: 'nav.messages' },
+  { key: 'genome', labelKey: 'nav.genome', sectionKey: 'nav.section.genomics' },
   { key: 'tables', labelKey: 'nav.tables', sectionKey: 'nav.section.advanced' },
   { key: 'setup', labelKey: 'nav.setup' },
 ];
@@ -88,6 +90,7 @@ export default function App() {
       case 'history': return <History />;
       case 'tables': return <Tables />;
       case 'chat': return <Chat onProviderChange={setProvider} />;
+      case 'genome': return <Genome />;
       case 'setup': return <Setup onDone={() => { setDbReady(true); loadPatient(); }} />;
     }
   })();
